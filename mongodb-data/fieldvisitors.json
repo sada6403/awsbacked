@@ -1,0 +1,171 @@
+[
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e3"
+        },
+        "visitor_code": "FV001",
+        "full_name": "Ram Kumar",
+        "email": "ram@nf.com",
+        "password": "$2a$10$xYzAbC123DefGhiJklMnoPqRsTuVwXyZ1234567890",
+        "mobile": "+94772345678",
+        "nic": "123456789V",
+        "address": "Jaffna, Sri Lanka",
+        "gender": "Male",
+        "civil_status": "Single",
+        "date_of_birth": {
+            "$date": "1990-05-15T00:00:00.000Z"
+        },
+        "application_for": "Field Visitor",
+        "branch": "Jaffna Branch",
+        "designation": "Senior Field Visitor",
+        "epf_no": "EPF12345",
+        "olevel": [
+            {
+                "subject": "Mathematics",
+                "grade": "A"
+            },
+            {
+                "subject": "Science",
+                "grade": "B"
+            },
+            {
+                "subject": "English",
+                "grade": "A"
+            }
+        ],
+        "alevel": [
+            {
+                "subject": "Physics",
+                "grade": "B"
+            },
+            {
+                "subject": "Chemistry",
+                "grade": "C"
+            },
+            {
+                "subject": "Biology",
+                "grade": "B"
+            }
+        ],
+        "other_qualifications": [
+            "Diploma in Agriculture"
+        ],
+        "previous_experience": [
+            {
+                "company": "ABC Farms",
+                "designation": "Junior Visitor",
+                "period": "2020-2022"
+            }
+        ],
+        "present_employer": "Nature Farming",
+        "references": [
+            {
+                "name": "John Doe",
+                "address": "Colombo",
+                "occupation": "Teacher",
+                "contact": "+94771111111"
+            },
+            {
+                "name": "Jane Smith",
+                "address": "Jaffna",
+                "occupation": "Doctor",
+                "contact": "+94772222222"
+            }
+        ],
+        "activities": [
+            "Sports",
+            "Reading",
+            "Community Service"
+        ],
+        "convicted": false,
+        "bank_name": "Commercial Bank",
+        "bank_branch": "Jaffna",
+        "account_number": "1234567890",
+        "manager_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e2"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "member_target": 150,
+        "status": "active",
+        "created_at": {
+            "$date": "2025-01-15T10:10:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T10:10:00.000Z"
+        }
+    },
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e4"
+        },
+        "visitor_code": "FV002",
+        "full_name": "Jhon Kunasingam",
+        "email": "jhon@nf.com",
+        "password": "$2a$10$xYzAbC123DefGhiJklMnoPqRsTuVwXyZ1234567890",
+        "mobile": "+94773456789",
+        "nic": "987654321V",
+        "address": "Green Road, Trincomalee",
+        "gender": "Male",
+        "civil_status": "Married",
+        "date_of_birth": {
+            "$date": "1988-08-20T00:00:00.000Z"
+        },
+        "application_for": "Field Visitor",
+        "branch": "Trincomalee Branch",
+        "designation": "Field Visitor",
+        "olevel": [
+            {
+                "subject": "Mathematics",
+                "grade": "B"
+            },
+            {
+                "subject": "Science",
+                "grade": "A"
+            }
+        ],
+        "alevel": [
+            {
+                "subject": "Commerce",
+                "grade": "B"
+            },
+            {
+                "subject": "Economics",
+                "grade": "C"
+            }
+        ],
+        "other_qualifications": [],
+        "previous_experience": [],
+        "references": [
+            {
+                "name": "Kumar Singh",
+                "address": "Trincomalee",
+                "occupation": "Farmer",
+                "contact": "+94773333333"
+            }
+        ],
+        "activities": [
+            "Farming",
+            "Photography"
+        ],
+        "convicted": false,
+        "bank_name": "Bank of Ceylon",
+        "bank_branch": "Trincomalee",
+        "account_number": "9876543210",
+        "manager_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e2"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "member_target": 150,
+        "status": "active",
+        "created_at": {
+            "$date": "2025-01-15T10:15:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T10:15:00.000Z"
+        }
+    }
+]

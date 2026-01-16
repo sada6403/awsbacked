@@ -1,0 +1,52 @@
+[
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d201"
+        },
+        "user_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e3"
+        },
+        "user_type": "field_visitor",
+        "user_type_model": "FieldVisitor",
+        "title": "New BUY Bill: NF-B-20250115-00001",
+        "body": "Iben Israar - Rs. 1250.00",
+        "bill_data": {
+            "bill_number": "NF-B-20250115-00001",
+            "transaction_id": {
+                "$oid": "65a1b2c3d4e5f6a7b8c9d101"
+            }
+        },
+        "read": false,
+        "created_at": {
+            "$date": "2025-01-15T11:00:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T11:00:00.000Z"
+        }
+    },
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d202"
+        },
+        "user_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e3"
+        },
+        "user_type": "field_visitor",
+        "user_type_model": "FieldVisitor",
+        "title": "New SELL Bill: NF-S-20250115-00001",
+        "body": "Iben Israar - Rs. 1125.00",
+        "bill_data": {
+            "bill_number": "NF-S-20250115-00001",
+            "transaction_id": {
+                "$oid": "65a1b2c3d4e5f6a7b8c9d102"
+            }
+        },
+        "read": false,
+        "created_at": {
+            "$date": "2025-01-15T14:30:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T14:30:00.000Z"
+        }
+    }
+]

@@ -1,0 +1,224 @@
+[
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e5"
+        },
+        "member_code": "M001",
+        "full_name": "Iben Israar",
+        "mobile": "+94717234478",
+        "email": "iben@example.com",
+        "nic": "987654321V",
+        "postal_address": "123 Main St, Jaffna",
+        "permanent_address": "123 Main St, Jaffna",
+        "location_coordinates": "9.6615,80.0255",
+        "gender": "Male",
+        "date_of_birth": {
+            "$date": "1985-03-10T00:00:00.000Z"
+        },
+        "resident_full_name": "Fatima Israar",
+        "resident_nic": "654321987V",
+        "resident_mobile": "+94717654321",
+        "resident_dob": {
+            "$date": "1987-06-15T00:00:00.000Z"
+        },
+        "resident_occupation": "Teacher",
+        "resident_education": "Bachelor's (General)",
+        "land_size": "5.5",
+        "activity": "Aloe Vera Cultivation",
+        "water_facility": "Yes",
+        "electricity": "Yes",
+        "machinery": "No",
+        "quantity_plants": 1000,
+        "field_visitor_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e3"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "mobile_verified": true,
+        "email_verified": true,
+        "otp_verified_at": {
+            "$date": "2025-01-15T10:20:00.000Z"
+        },
+        "status": "active",
+        "created_at": {
+            "$date": "2025-01-15T10:20:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T10:20:00.000Z"
+        }
+    },
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e6"
+        },
+        "member_code": "M002",
+        "full_name": "Priya Selvan",
+        "mobile": "+94718765432",
+        "email": "priya@example.com",
+        "nic": "456789123V",
+        "postal_address": "456 Farm Road, Jaffna",
+        "permanent_address": "456 Farm Road, Jaffna",
+        "location_coordinates": "9.6625,80.0265",
+        "gender": "Female",
+        "date_of_birth": {
+            "$date": "1992-07-25T00:00:00.000Z"
+        },
+        "resident_full_name": "Ravi Selvan",
+        "resident_nic": "321789456V",
+        "resident_mobile": "+94718123456",
+        "resident_dob": {
+            "$date": "1990-04-10T00:00:00.000Z"
+        },
+        "resident_occupation": "Engineer",
+        "resident_education": "Bachelor's (Honours)",
+        "land_size": "3.2",
+        "activity": "Organic Farming",
+        "water_facility": "Yes",
+        "electricity": "Yes",
+        "machinery": "Yes",
+        "quantity_plants": 500,
+        "field_visitor_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e3"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "mobile_verified": true,
+        "email_verified": false,
+        "otp_verified_at": {
+            "$date": "2025-01-15T10:25:00.000Z"
+        },
+        "status": "active",
+        "created_at": {
+            "$date": "2025-01-15T10:25:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T10:25:00.000Z"
+        }
+    },
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e7"
+        },
+        "member_code": "M003",
+        "full_name": "Kumar Rajesh",
+        "mobile": "+94719876543",
+        "email": "kumar@example.com",
+        "nic": "789123456V",
+        "postal_address": "789 Village Lane, Trincomalee",
+        "permanent_address": "789 Village Lane, Trincomalee",
+        "location_coordinates": "8.5874,81.2152",
+        "gender": "Male",
+        "date_of_birth": {
+            "$date": "1980-11-05T00:00:00.000Z"
+        },
+        "resident_full_name": "Lakshmi Rajesh",
+        "resident_nic": "456123789V",
+        "resident_mobile": "+94719123456",
+        "resident_dob": {
+            "$date": "1982-02-20T00:00:00.000Z"
+        },
+        "resident_occupation": "Homemaker",
+        "resident_education": "Ordinary Level (O/L)",
+        "land_size": "8.0",
+        "activity": "Mixed Farming",
+        "water_facility": "Yes",
+        "electricity": "No",
+        "machinery": "Yes",
+        "quantity_plants": 2000,
+        "field_visitor_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e4"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "mobile_verified": true,
+        "email_verified": true,
+        "otp_verified_at": {
+            "$date": "2025-01-15T10:30:00.000Z"
+        },
+        "status": "active",
+        "created_at": {
+            "$date": "2025-01-15T10:30:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T10:30:00.000Z"
+        }
+    },
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e8"
+        },
+        "member_code": "M004",
+        "full_name": "Anita Perera",
+        "mobile": "+94716543210",
+        "email": "anita@example.com",
+        "nic": "321654987V",
+        "postal_address": "321 Garden Street, Jaffna",
+        "permanent_address": "321 Garden Street, Jaffna",
+        "location_coordinates": "9.6635,80.0275",
+        "gender": "Female",
+        "date_of_birth": {
+            "$date": "1995-01-12T00:00:00.000Z"
+        },
+        "land_size": "2.5",
+        "activity": "Herb Cultivation",
+        "water_facility": "Yes",
+        "electricity": "Yes",
+        "machinery": "No",
+        "quantity_plants": 300,
+        "field_visitor_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e3"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "mobile_verified": true,
+        "email_verified": true,
+        "status": "active",
+        "created_at": {
+            "$date": "2025-01-15T10:35:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T10:35:00.000Z"
+        }
+    },
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e9"
+        },
+        "member_code": "M005",
+        "full_name": "Suresh Nair",
+        "mobile": "+94715432109",
+        "email": "suresh@example.com",
+        "nic": "147258369V",
+        "postal_address": "147 Coast Road, Trincomalee",
+        "permanent_address": "147 Coast Road, Trincomalee",
+        "location_coordinates": "8.5884,81.2162",
+        "gender": "Male",
+        "date_of_birth": {
+            "$date": "1978-09-30T00:00:00.000Z"
+        },
+        "land_size": "6.8",
+        "activity": "Aloe Vera & Vegetable Farming",
+        "water_facility": "Yes",
+        "electricity": "Yes",
+        "machinery": "Yes",
+        "quantity_plants": 1500,
+        "field_visitor_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e4"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "mobile_verified": true,
+        "status": "active",
+        "created_at": {
+            "$date": "2025-01-15T10:40:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T10:40:00.000Z"
+        }
+    }
+]

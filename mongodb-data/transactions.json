@@ -1,0 +1,196 @@
+[
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d101"
+        },
+        "bill_number": "NF-B-20250115-00001",
+        "transaction_type": "BUY",
+        "member_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e5"
+        },
+        "field_visitor_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e3"
+        },
+        "product_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0f1"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "quantity": 25,
+        "unit_type": "kg",
+        "unit_price": 50,
+        "total_amount": 1250,
+        "member_snapshot": {
+            "name": "Iben Israar",
+            "mobile": "+94717234478",
+            "address": "123 Main St, Jaffna"
+        },
+        "field_visitor_snapshot": {
+            "name": "Ram Kumar",
+            "code": "FV001",
+            "phone": "+94772345678"
+        },
+        "product_snapshot": {
+            "name": "Aloe Vera Leaf",
+            "category": "Leaf"
+        },
+        "transaction_date": {
+            "$date": "2025-01-15T11:00:00.000Z"
+        },
+        "pdf_generated": true,
+        "pdf_url": "/bills/NF-B-20250115-00001.pdf",
+        "status": "completed",
+        "created_at": {
+            "$date": "2025-01-15T11:00:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T11:00:00.000Z"
+        }
+    },
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d102"
+        },
+        "bill_number": "NF-S-20250115-00001",
+        "transaction_type": "SELL",
+        "member_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e5"
+        },
+        "field_visitor_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e3"
+        },
+        "product_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0f2"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "quantity": 15,
+        "unit_type": "number",
+        "unit_price": 75,
+        "total_amount": 1125,
+        "member_snapshot": {
+            "name": "Iben Israar",
+            "mobile": "+94717234478",
+            "address": "123 Main St, Jaffna"
+        },
+        "field_visitor_snapshot": {
+            "name": "Ram Kumar",
+            "code": "FV001",
+            "phone": "+94772345678"
+        },
+        "product_snapshot": {
+            "name": "Aloe Vera Small (Packet)",
+            "category": "Packet"
+        },
+        "transaction_date": {
+            "$date": "2025-01-15T14:30:00.000Z"
+        },
+        "pdf_generated": true,
+        "pdf_url": "/bills/NF-S-20250115-00001.pdf",
+        "status": "completed",
+        "created_at": {
+            "$date": "2025-01-15T14:30:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T14:30:00.000Z"
+        }
+    },
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d103"
+        },
+        "bill_number": "NF-B-20250115-00002",
+        "transaction_type": "BUY",
+        "member_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e6"
+        },
+        "field_visitor_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e3"
+        },
+        "product_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0f1"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "quantity": 18,
+        "unit_type": "kg",
+        "unit_price": 50,
+        "total_amount": 900,
+        "member_snapshot": {
+            "name": "Priya Selvan",
+            "mobile": "+94718765432",
+            "address": "456 Farm Road, Jaffna"
+        },
+        "field_visitor_snapshot": {
+            "name": "Ram Kumar",
+            "code": "FV001",
+            "phone": "+94772345678"
+        },
+        "product_snapshot": {
+            "name": "Aloe Vera Leaf",
+            "category": "Leaf"
+        },
+        "transaction_date": {
+            "$date": "2025-01-15T15:00:00.000Z"
+        },
+        "pdf_generated": true,
+        "status": "completed",
+        "created_at": {
+            "$date": "2025-01-15T15:00:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T15:00:00.000Z"
+        }
+    },
+    {
+        "_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d104"
+        },
+        "bill_number": "NF-B-20250115-00003",
+        "transaction_type": "BUY",
+        "member_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e7"
+        },
+        "field_visitor_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e4"
+        },
+        "product_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0f1"
+        },
+        "company_id": {
+            "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
+        },
+        "quantity": 40,
+        "unit_type": "kg",
+        "unit_price": 50,
+        "total_amount": 2000,
+        "member_snapshot": {
+            "name": "Kumar Rajesh",
+            "mobile": "+94719876543",
+            "address": "789 Village Lane, Trincomalee"
+        },
+        "field_visitor_snapshot": {
+            "name": "Jhon Kunasingam",
+            "code": "FV002",
+            "phone": "+94773456789"
+        },
+        "product_snapshot": {
+            "name": "Aloe Vera Leaf",
+            "category": "Leaf"
+        },
+        "transaction_date": {
+            "$date": "2025-01-15T16:00:00.000Z"
+        },
+        "pdf_generated": true,
+        "status": "completed",
+        "created_at": {
+            "$date": "2025-01-15T16:00:00.000Z"
+        },
+        "updated_at": {
+            "$date": "2025-01-15T16:00:00.000Z"
+        }
+    }
+]
