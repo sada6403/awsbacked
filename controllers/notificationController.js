@@ -60,6 +60,7 @@ const createNotification = async (req, res) => {
                         userRole: 'field_visitor', // Role of recipient
                         fieldVisitorId: visitor._id,
                         managerId: userId, // Sender
+                        branchId, // Add branchId
                         isRead: false
                     });
                 }
@@ -74,6 +75,7 @@ const createNotification = async (req, res) => {
                     userRole: 'field_visitor',
                     fieldVisitorId: recipientId,
                     managerId: userId, // Sender
+                    branchId, // Add branchId
                     isRead: false
                 });
             } else {
@@ -85,6 +87,7 @@ const createNotification = async (req, res) => {
                     userId,
                     userRole,
                     managerId: userId,
+                    branchId, // Add branchId
                     isRead: false
                 });
             }
@@ -97,6 +100,7 @@ const createNotification = async (req, res) => {
                 userId,
                 userRole,
                 fieldVisitorId: userId,
+                branchId, // Add branchId
                 isRead: false
             });
         }
