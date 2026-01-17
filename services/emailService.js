@@ -1,5 +1,6 @@
 // services/emailService.js
 const nodemailer = require('nodemailer');
+const path = require('path');
 
 class EmailService {
     constructor() {
@@ -41,8 +42,19 @@ class EmailService {
 
             if (attachmentUrl) {
                 mailOptions.text += `\n\nView Bill: ${attachmentUrl}`;
-                // Actual PDF attachment logic would require fetching the file stream or path
-                // For now, we send the link in the body or standard attachment object
+
+                // Construct absolute path for attachment
+                // Assumes attachmentUrl is relative to public folder (e.g. /bills/xxx.pdf)
+                try {
+                    const filePath = path.join(__dirname, '..', 'public', attachmentUrl);
+                    console.log('Attaching file from:', filePath);
+                    mailOptions.attachments = [{
+                        filename: path.basename(attachmentUrl),
+                        path: filePath
+                    }];
+                } catch (err) {
+                    console.error('Error preparing attachment:', err);
+                }
             }
 
             const info = await this.transporter.sendMail(mailOptions);
