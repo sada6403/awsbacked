@@ -167,15 +167,19 @@ const createTransaction = async (req, res) => {
         }
 
         // 2. Send Email Bill (PDF)
+        console.log(`[createTransaction] Attempting to send email. Member Email: ${member.email}`);
         try {
             if (member.email) {
-                await emailService.sendBillEmail(member.email, {
+                const mailRes = await emailService.sendBillEmail(member.email, {
                     name: member.full_name || member.name,
                     type: normalizedType.toUpperCase(),
                     billNumber: billNumber,
                     date: new Date().toLocaleDateString(),
                     amount: totalAmount
                 }, pdfUrl);
+                console.log('[createTransaction] Email Service Response:', mailRes);
+            } else {
+                console.log('[createTransaction] No email found for member, skipping email.');
             }
         } catch (emailError) {
             console.error('Failed to send Transaction Email:', emailError);
