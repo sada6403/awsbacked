@@ -209,6 +209,7 @@ const createTransaction = async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to create transaction',
+            v: 2,
             debug: {
                 error: error.toString(),
                 stack: error.stack
