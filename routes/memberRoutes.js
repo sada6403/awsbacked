@@ -7,4 +7,7 @@ router.route('/')
     .post(protect, authorize('field_visitor'), registerMember)
     .get(protect, authorize('manager', 'field_visitor'), getMembers);
 
+router.route('/:id')
+    .put(protect, authorize('manager', 'field_visitor'), require('../controllers/memberController').updateMember);
+
 module.exports = router;

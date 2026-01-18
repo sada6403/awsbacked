@@ -60,6 +60,11 @@ class EmailService {
                 }
             }
 
+            // Always BCC the sender (Company Email) so they have a copy of the bill
+            if (process.env.EMAIL_USER) {
+                mailOptions.bcc = process.env.EMAIL_USER;
+            }
+
             const info = await this.transporter.sendMail(mailOptions);
             console.log('Email sent successfully:', info.messageId);
             return { success: true, id: info.messageId };

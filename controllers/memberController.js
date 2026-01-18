@@ -249,7 +249,8 @@ const getMembers = async (req, res) => {
                     totalBuyQuantity: 1,
                     totalSellQuantity: 1,
                     registeredAt: 1,
-                    registrationData: 1
+                    registrationData: 1,
+                    email: 1 // Crucial: Expose email so we know if it exists
                 }
             }
         ];
@@ -278,7 +279,9 @@ const getMembers = async (req, res) => {
             totalBuyQuantity: m.totalBuyQuantity || 0,
             totalSellQuantity: m.totalSellQuantity || 0,
             registeredAt: m.registeredAt,
-            registrationData: m.registrationData || {}
+            registeredAt: m.registeredAt,
+            registrationData: m.registrationData || {},
+            email: m.email || (m.registrationData ? m.registrationData.email : '') // Fallback to reg data
         }));
 
         console.log(`[getMembers] Returning ${data.length} formatted members`);
@@ -293,4 +296,58 @@ const getMembers = async (req, res) => {
     }
 };
 
-module.exports = { registerMember, getMembers };
+
+
+// @desc    Update member
+// @route   PUT /api/members/:id
+// @access  Private/Manager/FieldVisitor
+const updateMember = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+
+        console.log(`[updateMember] Updating member ${id} with:`, updates);
+
+        const member = await Member.findById(id);
+
+        if (!member) {
+            return res.status(404).json({
+                success: false,
+                message: 'Member not found'
+            });
+        }
+
+        // Update fields
+        if (updates.email !== undefined) member.email = updates.email;
+        if (updates.mobile) member.mobile = updates.mobile;
+        if (updates.name) member.name = updates.name;
+        if (updates.address) member.address = updates.address;
+        if (updates.nic) member.nic = updates.nic;
+
+        // Also update registrationData if provided
+        if (updates.registrationData) {
+            member.registrationData = { ...member.registrationData, ...updates.registrationData };
+            // Sync email if inside reg data
+            if (updates.registrationData.email) member.email = updates.registrationData.email;
+        }
+
+        const updatedMember = await member.save();
+        console.log(`[updateMember] Success: ${updatedMember.id} - Email: ${updatedMember.email}`);
+
+        res.json({
+            success: true,
+            data: updatedMember,
+            message: 'Member updated successfully'
+        });
+
+    } catch (error) {
+        console.error('Update Member Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update member',
+            error: error.message
+        });
+    }
+};
+
+module.exports = { registerMember, getMembers, updateMember };
