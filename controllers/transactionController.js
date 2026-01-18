@@ -83,34 +83,59 @@ const createTransaction = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid quantity or unit price' });
         }
 
-        const billNumber = await generateBillNumber(normalizedType.toUpperCase());
+        const maxRetries = 3;
+        let attempt = 0;
+        let saved = null;
+        let billNumber = '';
+        let transaction = null;
 
-        const transaction = new Transaction({
-            billNumber,
-            type: normalizedType,
-            memberId: member._id,
-            fieldVisitorId: fv._id,
-            productName,
-            quantity: Number(quantity),
-            unitType,
-            unitPrice: Number(unitPrice),
-            totalAmount,
-            branchId,
-            date: new Date() // Explicitly set date to ensure it exists for PDF
-        });
+        while (attempt < maxRetries) {
+            try {
+                attempt++;
+                billNumber = await generateBillNumber(normalizedType.toUpperCase());
 
-        // Generate PDF
-        let pdfUrl = '';
-        try {
-            pdfUrl = await generateBillPDF(transaction, member, fv);
-            transaction.pdfUrl = pdfUrl;
-        } catch (pdfErr) {
-            console.error('[createTransaction] PDF Generation Error:', pdfErr.message);
-            // We can continue or fail. Let's fail for now as the app expects a bill.
-            throw new Error(`PDF Generation failed: ${pdfErr.message}`);
+                transaction = new Transaction({
+                    billNumber,
+                    type: normalizedType,
+                    memberId: member._id,
+                    fieldVisitorId: fv._id,
+                    productName,
+                    quantity: Number(quantity),
+                    unitType,
+                    unitPrice: Number(unitPrice),
+                    totalAmount,
+                    branchId,
+                    date: new Date() // Explicitly set date to ensure it exists for PDF
+                });
+
+                // Generate PDF
+                let pdfUrl = '';
+                try {
+                    pdfUrl = await generateBillPDF(transaction, member, fv);
+                    transaction.pdfUrl = pdfUrl;
+                } catch (pdfErr) {
+                    console.error('[createTransaction] PDF Generation Error:', pdfErr.message);
+                    // We fail here because PDF is critical, but we don't retry for PDF generation errors
+                    throw new Error(`PDF Generation failed: ${pdfErr.message}`);
+                }
+
+                saved = await transaction.save();
+                // If save is successful, break the loop
+                break;
+            } catch (err) {
+                if (err.code === 11000 && err.keyPattern && err.keyPattern.billNumber) {
+                    console.warn(`[createTransaction] Bill number collision (Attempt ${attempt}/${maxRetries}): ${billNumber}. Retrying...`);
+                    if (attempt === maxRetries) {
+                        throw new Error('Failed to generate unique bill number after multiple attempts. Please try again.');
+                    }
+                    // Continue to next iteration to regenerate bill number
+                    continue;
+                } else {
+                    // Start of non-retryable error
+                    throw err;
+                }
+            }
         }
-
-        const saved = await transaction.save();
 
         // --- Notifications (SMS & Email) ---
         // 1. Send SMS Bill (Normal SMS)
