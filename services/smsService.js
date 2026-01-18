@@ -157,14 +157,19 @@ class SmsService {
     }
 
     async sendOTP(mobile, otp) {
+        // Sanitize: 947XXXXXXXX format preferred by Mobitel
+        const cleanMobile = mobile.replace(/^\+/, '');
+        console.log(`[SMS] Sanitized ${mobile} -> ${cleanMobile}`);
+
         const message = `Your Nature Farming OTP is: ${otp}. Valid for 2 minutes.`;
-        return this.provider.sendSMS(mobile, message);
+        return this.provider.sendSMS(cleanMobile, message);
     }
 
     async sendBillSMS(mobile, billData) {
+        const cleanMobile = mobile.replace(/^\+/, '');
         const { name, type, billNumber, date, amount } = billData;
         const message = `Dear ${name}, your ${type} (Ref: ${billNumber}) on ${date} for Rs. ${amount} is complete. Thank you! - Nature Farming`;
-        return this.provider.sendSMS(mobile, message);
+        return this.provider.sendSMS(cleanMobile, message);
     }
 }
 
