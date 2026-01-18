@@ -147,29 +147,33 @@ const createTransaction = async (req, res) => {
 
         // --- Notifications (SMS & Email) ---
         // 1. Send SMS Bill (Normal SMS)
+        // --- Notifications (SMS & Email) ---
+        // 1. Send SMS Bill (Normal SMS)
         try {
             if (member.mobile) {
+                console.log('[createTransaction] Sending SMS...');
                 await smsService.sendBillSMS(member.mobile, {
                     name: member.full_name || member.name,
                     type: normalizedType.toUpperCase(),
                     billNumber: billNumber,
                     date: new Date().toLocaleDateString(),
                     amount: totalAmount,
-                    // New fields for better formatting
                     productName: productName,
                     quantity: Number(quantity),
                     unitType: unitType,
                     unitPrice: Number(unitPrice)
                 });
+                console.log('[createTransaction] SMS Sent.');
             }
         } catch (smsError) {
-            console.error('Failed to send Transaction SMS:', smsError);
+            console.error('[createTransaction] SMS Failed:', smsError.message);
         }
 
         // 2. Send Email Bill (PDF)
-        console.log(`[createTransaction] Attempting to send email. Member Email: ${member.email}`);
+        console.log(`[createTransaction] Processing Email. Member Email: '${member.email}'`);
         try {
-            if (member.email) {
+            if (member.email && member.email.trim().length > 0) {
+                console.log('[createTransaction] Calling emailService.sendBillEmail...');
                 const mailRes = await emailService.sendBillEmail(member.email, {
                     name: member.full_name || member.name,
                     type: normalizedType.toUpperCase(),
@@ -177,12 +181,12 @@ const createTransaction = async (req, res) => {
                     date: new Date().toLocaleDateString(),
                     amount: totalAmount
                 }, pdfUrl);
-                console.log('[createTransaction] Email Service Response:', mailRes);
+                console.log('[createTransaction] Email Result:', JSON.stringify(mailRes));
             } else {
-                console.log('[createTransaction] No email found for member, skipping email.');
+                console.warn('[createTransaction] SKIP EMAIL: Member has no email address.');
             }
         } catch (emailError) {
-            console.error('Failed to send Transaction Email:', emailError);
+            console.error('[createTransaction] Email Failed:', emailError);
         }
 
         const populated = await Transaction.findById(saved._id)
@@ -192,7 +196,10 @@ const createTransaction = async (req, res) => {
 
         // Notify field visitor + branch manager
         try {
+            console.log('[createTransaction] Preparing Notifications...');
             const manager = fv.managerId ? await BranchManager.findById(fv.managerId).lean() : null;
+            if (!manager) console.log('[createTransaction] No Manager found for this FV.');
+
             const title = `${normalizedType === 'sell' ? '📤 Sale' : '🛒 Purchase'} - ${productName}`;
             const body = `Transaction of Rs. ${totalAmount} on ${new Date().toLocaleDateString()} for ${member.name}`;
 
@@ -228,10 +235,11 @@ const createTransaction = async (req, res) => {
                 });
             }
 
-            await Notification.insertMany(notifications);
+            console.log(`[createTransaction] Inserting ${notifications.length} notifications...`);
+            const savedNotifs = await Notification.insertMany(notifications);
+            console.log(`[createTransaction] Notifications Saved: ${savedNotifs.length}`);
         } catch (notifyErr) {
-            console.error('[createTransaction] Notification Error:', notifyErr.message);
-            // Don't fail the whole transaction if notification fails
+            console.error('[createTransaction] Notification Creation Failed:', notifyErr);
         }
 
         res.status(201).json({
