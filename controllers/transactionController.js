@@ -115,7 +115,12 @@ const createTransaction = async (req, res) => {
                     type: normalizedType.toUpperCase(),
                     billNumber: billNumber,
                     date: new Date().toLocaleDateString(),
-                    amount: totalAmount
+                    amount: totalAmount,
+                    // New fields for better formatting
+                    productName: productName,
+                    quantity: Number(quantity),
+                    unitType: unitType,
+                    unitPrice: Number(unitPrice)
                 });
             }
         } catch (smsError) {

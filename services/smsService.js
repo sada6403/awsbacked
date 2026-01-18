@@ -167,8 +167,20 @@ class SmsService {
 
     async sendBillSMS(mobile, billData) {
         const cleanMobile = mobile.replace(/^\+/, '');
-        const { name, type, billNumber, date, amount } = billData;
-        const message = `Dear ${name}, your ${type} (Ref: ${billNumber}) on ${date} for Rs. ${amount} is complete. Thank you! - Nature Farming`;
+        const { name, type, billNumber, date, amount, productName, quantity, unitType, unitPrice } = billData;
+
+        // Clean & Spaced Format
+        const message = `Nature Farming Update\n\n` +
+            `Dear ${name},\n` +
+            `${type === 'BUY' ? 'Purchase' : 'Sale'} Successful!\n\n` +
+            `Item: ${productName || 'Produce'}\n` +
+            `Qty: ${quantity} ${unitType}\n` +
+            `Price: Rs. ${unitPrice}/${unitType}\n` +
+            `Total: Rs. ${amount}\n\n` +
+            `Ref: ${billNumber}\n` +
+            `Date: ${date}\n\n` +
+            `Thank you!`;
+
         return this.provider.sendSMS(cleanMobile, message);
     }
 }
