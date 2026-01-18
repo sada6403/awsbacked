@@ -271,4 +271,36 @@ const getFieldVisitorById = async (req, res) => {
     }
 };
 
-module.exports = { registerFieldVisitor, getFieldVisitors, getFieldVisitorById, sendVerificationEmail };
+// @desc    Test Email Sending
+// @route   GET /api/fieldvisitors/test-email
+// @access  Public
+const sendTestEmail = async (req, res) => {
+    try {
+        const testEmail = process.env.EMAIL_USER; // Send to self (the sender)
+        if (!testEmail) {
+            return res.status(500).json({ success: false, message: 'EMAIL_USER not set in env' });
+        }
+
+        console.log('Testing Email Routes... Sending to:', testEmail);
+
+        // Mock a bill
+        const result = await emailService.sendBillEmail(testEmail, {
+            name: 'Test User',
+            type: 'TEST-TRANSACTION',
+            billNumber: 'TEST-001',
+            date: new Date().toLocaleDateString(),
+            amount: 100.00
+        }, null); // No attachment for basic test
+
+        if (result.success) {
+            res.json({ success: true, message: `Email sent to ${testEmail}`, result });
+        } else {
+            res.status(500).json({ success: false, message: 'Email failed', error: result.error });
+        }
+    } catch (error) {
+        console.error('Test Email Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    }
+};
+
+module.exports = { registerFieldVisitor, getFieldVisitors, getFieldVisitorById, sendVerificationEmail, sendTestEmail };

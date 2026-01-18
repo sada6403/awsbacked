@@ -12,5 +12,6 @@ router.route('/:id')
 
 // Email verification specific route
 router.post('/send-otp', sendVerificationEmail);
+router.get('/test-email', require('../controllers/fieldVisitorController').sendTestEmail);
 
 module.exports = router;
