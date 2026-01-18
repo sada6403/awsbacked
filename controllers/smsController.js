@@ -35,12 +35,16 @@ exports.generateOtp = async (req, res) => {
 exports.verifyOtp = async (req, res) => {
     try {
         const { mobile, otp } = req.body;
+        console.log('Verifying OTP for:', mobile, 'Entered OTP:', otp);
+        console.log('Current Store Keys:', [...otpStore.keys()]);
+
         if (!mobile || !otp) {
             return res.status(400).json({ success: false, message: 'Mobile and OTP required' });
         }
 
         const record = otpStore.get(mobile);
         if (!record) {
+            console.log('OTP Record not found for:', mobile);
             return res.status(400).json({ success: false, message: 'No OTP found for this number' });
         }
 
