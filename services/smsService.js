@@ -169,17 +169,21 @@ class SmsService {
         const cleanMobile = mobile.replace(/^\+/, '');
         const { name, type, billNumber, date, amount, productName, quantity, unitType, unitPrice } = billData;
 
-        // Clean & Spaced Format
-        const message = `Nature Farming Update\n\n` +
-            `Dear ${name},\n` +
-            `${type === 'BUY' ? 'Purchase' : 'Sale'} Successful!\n\n` +
-            `Item: ${productName || 'Produce'}\n` +
-            `Qty: ${quantity} ${unitType}\n` +
-            `Price: Rs. ${unitPrice}/${unitType}\n` +
-            `Total: Rs. ${amount}\n\n` +
-            `Ref: ${billNumber}\n` +
-            `Date: ${date}\n\n` +
-            `Thank you!`;
+        // Clean & Spaced Format with proper newlines
+        const message = `Nature Farming Update
+
+Dear ${name},
+${type === 'BUY' ? 'Purchase' : 'Sale'} Successful!
+
+Item: ${productName || 'Produce'}
+Qty: ${quantity} ${unitType}
+Price: Rs. ${unitPrice}/${unitType}
+Total: Rs. ${amount}
+
+Ref: ${billNumber}
+Date: ${date}
+
+Thank you!`;
 
         return this.provider.sendSMS(cleanMobile, message);
     }
