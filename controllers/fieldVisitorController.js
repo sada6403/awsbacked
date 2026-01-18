@@ -1,6 +1,7 @@
 const sendEmail = require('../utils/emailService');
 const FieldVisitor = require('../models/FieldVisitor');
 const Otp = require('../models/Otp');
+const Notification = require('../models/Notification'); // Moved to top
 
 // @desc    Send verification OTP to email
 // @route   POST /api/fieldvisitors/send-otp
@@ -248,7 +249,7 @@ const getFieldVisitors = async (req, res) => {
     res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize) });
 };
 
-const Notification = require('../models/Notification'); // Import Notification model
+// Notification require moved to top
 
 // @desc    Get single field visitor by ID
 // @route   GET /api/fieldvisitors/:id
