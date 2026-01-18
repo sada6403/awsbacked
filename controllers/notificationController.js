@@ -103,6 +103,28 @@ const createNotification = async (req, res) => {
                 branchId, // Add branchId
                 isRead: false
             });
+
+            // NEW: Automatically notify the Branch Manager(s)
+            try {
+                const BranchManager = require('../models/BranchManager');
+                const managers = await BranchManager.find({ branchId });
+                console.log(`[createNotification] Found ${managers.length} managers for branch ${branchId}`);
+
+                for (const manager of managers) {
+                    notificationsToCreate.push({
+                        title,
+                        body,
+                        date: date || Date.now(),
+                        userId: manager._id, // Target the Manager
+                        userRole: 'manager',
+                        fieldVisitorId: userId, // From this FV
+                        branchId,
+                        isRead: false
+                    });
+                }
+            } catch (err) {
+                console.error('[createNotification] Error finding manager:', err.message);
+            }
         }
 
         if (notificationsToCreate.length > 0) {
