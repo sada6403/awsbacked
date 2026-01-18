@@ -11,7 +11,7 @@ const getMyNotifications = async (req, res) => {
             return res.status(401).json({ success: false, message: 'Not authorized' });
         }
 
-        const notifications = await Notification.find({ userId, branchId: req.user.branchId })
+        const notifications = await Notification.find({ userId })
             .sort({ date: -1 })
             .limit(100)
             .lean();
