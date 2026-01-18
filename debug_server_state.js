@@ -1,11 +1,22 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 
-// Define/Mock Models locally to ensure standalone execution
-const TransactionSchema = new mongoose.Schema({}, { strict: false });
+// Mock Models
+const TransactionSchema = new mongoose.Schema({
+    billNumber: String,
+    type: String,
+    memberId: { type: mongoose.Schema.Types.ObjectId, ref: 'Member' },
+    fieldVisitorId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldVisitor' },
+    totalAmount: Number,
+    date: Date,
+    pdfUrl: String
+}, { strict: false });
 const Transaction = mongoose.model('Transaction', TransactionSchema);
 
-const MemberSchema = new mongoose.Schema({}, { strict: false });
+const MemberSchema = new mongoose.Schema({
+    name: String,
+    email: String
+}, { strict: false });
 const Member = mongoose.model('Member', MemberSchema);
 
 const NotificationSchema = new mongoose.Schema({
@@ -24,20 +35,26 @@ const NotificationSchema = new mongoose.Schema({
 });
 const Notification = mongoose.model('Notification', NotificationSchema);
 
-// Email Service Mock/Import
 const emailService = require('./services/emailService');
+const { generateBillPDF } = require('./utils/pdfGenerator');
+
+// Mock objects for PDF
+const mockTransaction = { billNumber: 'DEBUG-PDF-001', type: 'buy', totalAmount: 500, date: new Date() };
+const mockMember = { name: 'Debug Member', mobile: '0000000000', address: 'Debug Address' };
+const mockFV = { name: 'Debug FV', userId: 'D001', phone: '1111111111', area: 'Debug Area' };
+
 
 const runDebug = async () => {
     try {
         const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
-        if (!uri) throw new Error('MONGODB_URI/MONGO_URI is missing in .env');
+        if (!uri) throw new Error('MONGODB_URI is missing in .env');
 
         console.log('Connecting to DB...');
         await mongoose.connect(uri);
         console.log('Connected.');
 
         // 1. Get Latest Transaction
-        const transaction = await Transaction.findOne().sort({ createdAt: -1 });
+        const transaction = await Transaction.findOne().sort({ _id: -1 }); // Sort by ID descending for speed
         if (!transaction) {
             console.log('No transactions found.');
             return;
@@ -45,20 +62,18 @@ const runDebug = async () => {
 
         console.log('=============================================');
         console.log(`LATEST TRANSACTION: ${transaction._id}`);
-        console.log(`Date: ${transaction.createdAt}`);
+        console.log(`Date: ${transaction.date}`);
         console.log(`Bill: ${transaction.billNumber}`);
         console.log(`Member ID: ${transaction.memberId}`);
         console.log('=============================================');
 
-        // 2. Check Member Email
+        // 2. Check Member Email (Fetch fresh)
         let member = null;
         if (transaction.memberId) {
             member = await Member.findById(transaction.memberId);
             if (member) {
                 console.log(`MEMBER: ${member.name}`);
                 console.log(`EMAIL: '${member.email}'`);
-                if (!member.email) console.log('>>> WARNING: Email is missing or empty!');
-                else console.log('>>> Email is present.');
             } else {
                 console.log('>>> ERROR: Member not found!');
             }
@@ -66,56 +81,35 @@ const runDebug = async () => {
 
         // 3. Check Notifications
         const notifs = await Notification.find({ transactionId: transaction._id });
-        console.log('=============================================');
         console.log(`NOTIFICATIONS FOUND: ${notifs.length}`);
-        if (notifs.length === 0) {
-            console.log('>>> WARNING: No notification created for this transaction.');
-        } else {
-            notifs.forEach(n => {
-                console.log(`- Title: ${n.title}`);
-                console.log(`- Recipient (UserId): ${n.userId}`);
-                console.log(`- Role: ${n.userRole}`);
-            });
+
+        // 4. Test PDF Generation & Email Attachment
+        console.log('=============================================');
+        console.log('TESTING PDF GENERATION...');
+        let pdfPath = '';
+        try {
+            // Ensure public/bills exists? internal logic handles it
+            pdfPath = await generateBillPDF(mockTransaction, mockMember, mockFV);
+            console.log(`>>> PDF Generated at: ${pdfPath}`);
+        } catch (err) {
+            console.log(`>>> PDF Generation FAILED: ${err.message}`);
         }
 
-        // 4. Test Notification Creation (Simulation)
-        if (notifs.length === 0 && transaction.fieldVisitorId) {
-            console.log('=============================================');
-            console.log('ATTEMPTING TEST NOTIFICATION CREATION...');
+        if (pdfPath) {
+            console.log('TESTING EMAIL WITH ATTACHMENT...');
+            // We use a hardcoded email for safety, or the member email found earlier
+            const targetEmail = 'nfplantationsk@gmail.com';
             try {
-                const newNotif = new Notification({
-                    title: 'Test Notification',
-                    body: 'This is a debug test.',
-                    transactionId: transaction._id,
-                    userId: transaction.fieldVisitorId, // Assuming FV is the user
-                    userRole: 'field_visitor',
-                    branchId: 'debug-branch'
-                });
-                await newNotif.save();
-                console.log('>>> SUCCESS: Test notification saved. (DB is writable, Schema matches)');
-                // Cleanup
-                await Notification.findByIdAndDelete(newNotif._id);
-                console.log('>>> CLEANUP: Test notification deleted.');
-            } catch (err) {
-                console.log(`>>> FAILED to create notification: ${err.message}`);
-            }
-        }
-
-        // 5. Test Email Sending (if member has email)
-        if (member && member.email) {
-            console.log('=============================================');
-            console.log(`ATTEMPTING TEST EMAIL to ${member.email}...`);
-            try {
-                await emailService.sendBillEmail(member.email, {
-                    name: member.name,
-                    type: 'DEBUG-TEST',
-                    billNumber: transaction.billNumber,
+                await emailService.sendBillEmail(targetEmail, {
+                    name: 'Debug User',
+                    type: 'DEBUG-PDF-TEST',
+                    billNumber: 'DEBUG-PDF-001',
                     date: new Date().toISOString(),
-                    amount: 999
-                }, null); // No PDF for test
-                console.log('>>> SUCCESS: Email sent (Check inbox).');
+                    amount: 500
+                }, pdfPath);
+                console.log('>>> SUCCESS: Email with Attachment Sent!');
             } catch (err) {
-                console.log(`>>> FAILED to send email: ${err.message}`);
+                console.log(`>>> FAILED to send email with attachment: ${err.message}`);
             }
         }
 
