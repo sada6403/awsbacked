@@ -1,5 +1,4 @@
 const Member = require('../models/Member');
-const BranchManager = require('../models/BranchManager');
 
 // @desc    Register a member
 // @route   POST /api/members
@@ -28,6 +27,58 @@ const registerMember = async (req, res, next) => {
             }
         }
 
+        // Generate Custom Member ID
+        let generatedMemberCode = memberCode;
+        if (!generatedMemberCode) {
+            // 1. Get Branch Code
+            let branchCode = 'XX'; // Default
+
+            // Try to find branch name from BranchManager
+            // If user is manager, they have branchName. If FieldVisitor, need to fetch.
+            let branchNameStr = '';
+
+            if (req.user.role === 'manager') {
+                branchNameStr = req.user.branchName;
+            } else {
+                // Field Visitor: find their manager's branch or simply use the branchId mapping if possible
+                // Better: Fetch BranchManager for this branchId
+                const BranchManager = require('../models/BranchManager');
+                const branchManager = await BranchManager.findOne({ branchId });
+                if (branchManager) {
+                    branchNameStr = branchManager.branchName;
+                }
+            }
+
+            // Map branch name to 2-letter code
+            if (branchNameStr) {
+                const nameUpper = branchNameStr.toUpperCase();
+                if (nameUpper.includes('KALMUNAI')) branchCode = 'KA';
+                else if (nameUpper.includes('TRINCO')) branchCode = 'TR';
+                else if (nameUpper.includes('KONDAVIL')) branchCode = 'JK'; // Jaffna (Kondavil)
+                else if (nameUpper.includes('SAVAGACHERI') || nameUpper.includes('CHAVAKACHCHERI')) branchCode = 'JS'; // Jaffna (Savagacheri)
+                else branchCode = nameUpper.substring(0, 2);
+            }
+
+            // 2. Find last member code for this branch prefix
+            const prefix = `FA${branchCode}`;
+            const lastMember = await Member.findOne({
+                memberCode: { $regex: `^${prefix}\\d+$` }
+            })
+                .sort({ memberCode: -1 })
+                .collation({ locale: "en", numericOrdering: true });
+
+            let sequence = 1;
+            if (lastMember && lastMember.memberCode) {
+                const lastSeqStr = lastMember.memberCode.replace(prefix, '');
+                const lastSeq = parseInt(lastSeqStr, 10);
+                if (!isNaN(lastSeq)) {
+                    sequence = lastSeq + 1;
+                }
+            }
+
+            generatedMemberCode = `${prefix}${sequence.toString().padStart(3, '0')}`;
+        }
+
         // Create new member instance
         const newMember = new Member({
             name,
@@ -35,7 +86,7 @@ const registerMember = async (req, res, next) => {
             mobile,
             email,
             nic,
-            memberCode: memberCode || await generateMemberCode(branchId, req.user),
+            memberCode: generatedMemberCode,
             registrationData,
             fieldVisitorId: req.user ? req.user._id : undefined,
             branchId
@@ -234,52 +285,6 @@ const getMembers = async (req, res) => {
             message: 'Failed to retrieve members',
             error: error.message
         });
-    }
-};
-
-const generateMemberCode = async (branchId, user) => {
-    try {
-        let branchName = '';
-
-        // 1. Get Branch Name
-        if (user && user.role === 'manager' && user.branchName) {
-            branchName = user.branchName;
-        } else {
-            // Field Visitor or missing branchName
-            const manager = await BranchManager.findOne({ branchId });
-            if (manager) {
-                branchName = manager.branchName;
-            }
-        }
-
-        // Fallback if branch name not found
-        if (!branchName) branchName = 'Kalmunai';
-
-        // 2. Generate Prefix (FA + First 2 letters of Branch)
-        const cleanBranchName = branchName.replace(/[^a-zA-Z]/g, '');
-        const branchCode = cleanBranchName.substring(0, 2).toUpperCase();
-        const prefix = `FA${branchCode}`;
-
-        // 3. Find latest member with this prefix
-        const lastMember = await Member.findOne({
-            memberCode: { $regex: `^${prefix}\\d+$` }
-        }).sort({ memberCode: -1 });
-
-        let sequence = 1;
-        if (lastMember && lastMember.memberCode) {
-            const numPart = lastMember.memberCode.replace(prefix, '');
-            const parsed = parseInt(numPart, 10);
-            if (!isNaN(parsed)) {
-                sequence = parsed + 1;
-            }
-        }
-
-        // 4. Format: Prefix + 3 digit sequence (e.g., FAKA001)
-        return `${prefix}${sequence.toString().padStart(3, '0')}`;
-
-    } catch (error) {
-        console.error('Error generating member code:', error);
-        return `MEM-${Date.now()}`;
     }
 };
 
