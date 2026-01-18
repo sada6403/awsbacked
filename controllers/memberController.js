@@ -1,6 +1,4 @@
 const Member = require('../models/Member');
-const Notification = require('../models/Notification');
-const { generateMemberPDF } = require('../utils/pdfGenerator');
 
 // @desc    Register a member
 // @route   POST /api/members
@@ -96,31 +94,6 @@ const registerMember = async (req, res, next) => {
 
         // Await the save operation properly
         const savedMember = await newMember.save();
-
-        // --- Generate PDF & Notification ---
-        let pdfUrl = '';
-        try {
-            pdfUrl = await generateMemberPDF(savedMember);
-
-            // Create Notification for the Field Visitor (or Manager who registered)
-            const userId = req.user ? req.user._id : undefined;
-            if (userId) {
-                await Notification.create({
-                    title: `Member Registered: ${savedMember.name}`,
-                    body: 'Tap to view/download the registration summary.',
-                    date: new Date(),
-                    isRead: false,
-                    attachment: pdfUrl,
-                    memberId: savedMember._id,
-                    branchId: branchId,
-                    userId: userId,
-                    userRole: req.user.role // 'field_visitor' or 'manager'
-                });
-            }
-        } catch (pdfError) {
-            console.error('Failed to generate Member PDF/Notification:', pdfError);
-            // Non-blocking error
-        }
 
         // Return the saved document immediately
         res.status(201).json({
