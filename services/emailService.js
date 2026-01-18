@@ -44,20 +44,24 @@ class EmailService {
                 mailOptions.text += `\n\nView Bill: ${attachmentUrl}`;
 
                 // Construct absolute path for attachment
-                // Assumes attachmentUrl is relative to public folder (e.g. /bills/xxx.pdf)
                 try {
-                    const filePath = path.join(__dirname, '..', 'public', attachmentUrl);
+                    // Remove leading slash or backslash if present to ensure path.join works as relative
+                    const safeUrl = attachmentUrl.replace(/^[\/\\]/, '');
+                    const filePath = path.join(__dirname, '..', 'public', safeUrl);
+
                     console.log('Attaching file from:', filePath);
+
                     mailOptions.attachments = [{
                         filename: path.basename(attachmentUrl),
                         path: filePath
                     }];
                 } catch (err) {
-                    console.error('Error preparing attachment:', err);
+                    console.error('Error preparing attachment (sending email without attachment):', err);
                 }
             }
 
             const info = await this.transporter.sendMail(mailOptions);
+            console.log('Email sent successfully:', info.messageId);
             return { success: true, id: info.messageId };
         } catch (error) {
             console.error('Email send error:', error);
