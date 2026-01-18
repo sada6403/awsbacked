@@ -41,7 +41,7 @@ class EmailService {
             };
 
             if (attachmentUrl) {
-                mailOptions.text += `\n\nView Bill: ${attachmentUrl}`;
+                // mailOptions.text += `\n\nView Bill: ${attachmentUrl}`; // Removed to avoid showing raw path
 
                 // Construct absolute path for attachment
                 try {
@@ -72,7 +72,7 @@ class EmailService {
     async sendBillEmail(to, billData, pdfUrl) {
         const { name, type, billNumber, date, amount } = billData;
         const subject = `Your Nature Farming Bill - ${billNumber}`;
-        const body = `Dear ${name},\n\nYour transaction (${type}) was completed successfully.\n\nDate: ${date}\nBill Number: ${billNumber}\nAmount: Rs. ${amount}\n\nPlease find your bill linked below or attached.\n\n${pdfUrl || ''}\n\nThank you,\nNature Farming`;
+        const body = `Dear ${name},\n\nYour transaction (${type}) was completed successfully.\n\nDate: ${date}\nBill Number: ${billNumber}\nAmount: Rs. ${amount}\n\nPlease find your bill attached.\n\nThank you,\nNature Farming`;
 
         return this.sendEmail(to, subject, body, pdfUrl);
     }
