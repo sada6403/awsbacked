@@ -127,6 +127,32 @@ app.get('/api/health', (req, res) => {
     res.status(200).json({ ok: true, timestamp: new Date().toISOString() });
 });
 
+// Debug Email Route (Directly on app to avoid router issues)
+app.get('/api/debug-email', async (req, res) => {
+    try {
+        const emailService = require('./services/emailService');
+        const testEmail = process.env.EMAIL_USER;
+
+        if (!testEmail) {
+            return res.json({ success: false, message: 'EMAIL_USER not set' });
+        }
+
+        console.log('Testing Email via /api/debug-email to:', testEmail);
+        const result = await emailService.sendBillEmail(testEmail, {
+            name: 'Debug User',
+            type: 'DEBUG',
+            billNumber: 'DBG-001',
+            date: new Date().toLocaleDateString(),
+            amount: 777.00
+        }, null);
+
+        res.json({ success: true, message: 'Debug email attempt finished', result });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Fallback: GET /api/members (for backward compatibility)
 // Note: This might conflict with memberRoutes, so comment out if needed
 // app.get('/api/members', async (req, res) => {
