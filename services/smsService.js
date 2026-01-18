@@ -169,19 +169,29 @@ class SmsService {
         const cleanMobile = mobile.replace(/^\+/, '');
         const { name, type, billNumber, date, amount, productName, quantity, unitType, unitPrice } = billData;
 
+        // Defensive null checks to prevent crashes
+        const safeName = name || 'Customer';
+        const safeProductName = productName || 'Product';
+        const safeQuantity = quantity || 0;
+        const safeUnitType = unitType || 'units';
+        const safeUnitPrice = unitPrice || 0;
+        const safeAmount = amount || 0;
+        const safeBillNumber = billNumber || 'N/A';
+        const safeDate = date || new Date().toLocaleDateString();
+
         // Clean & Spaced Format with proper newlines
         const message = `Nature Farming Update
 
-Dear ${name},
+Dear ${safeName},
 ${type === 'BUY' ? 'Purchase' : 'Sale'} Successful!
 
-Item: ${productName || 'Produce'}
-Qty: ${quantity} ${unitType}
-Price: Rs. ${unitPrice}/${unitType}
-Total: Rs. ${amount}
+Item: ${safeProductName}
+Qty: ${safeQuantity} ${safeUnitType}
+Price: Rs. ${safeUnitPrice}/${safeUnitType}
+Total: Rs. ${safeAmount}
 
-Ref: ${billNumber}
-Date: ${date}
+Ref: ${safeBillNumber}
+Date: ${safeDate}
 
 Thank you!`;
 
