@@ -165,6 +165,25 @@ const registerFieldVisitor = async (req, res, next) => {
             }
         }
 
+        // CREATE NOTIFICATION FOR MANAGER
+        try {
+            if (req.user && req.user._id) {
+                await Notification.create({
+                    title: `Field Visitor Registered: ${name}`,
+                    body: `New Field Visitor ${name} (${generatedUserId}) has been registered in ${area}.`,
+                    date: new Date(),
+                    userId: req.user._id, // Notify the Manager who created it
+                    userRole: req.user.role,
+                    managerId: req.user._id,
+                    fieldVisitorId: savedFieldVisitor._id, // Store ID for Deep Linking
+                    branchId: req.user.branchId,
+                    isRead: false
+                });
+            }
+        } catch (notifyErr) {
+            console.error('Failed to create registration notification:', notifyErr.message);
+        }
+
         // Return the saved document immediately with consistent field names
         res.status(201).json({
             success: true,
@@ -229,4 +248,26 @@ const getFieldVisitors = async (req, res) => {
     res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize) });
 };
 
-module.exports = { registerFieldVisitor, getFieldVisitors, sendVerificationEmail };
+const Notification = require('../models/Notification'); // Import Notification model
+
+// @desc    Get single field visitor by ID
+// @route   GET /api/fieldvisitors/:id
+// @access  Private
+const getFieldVisitorById = async (req, res) => {
+    try {
+        const fieldVisitor = await FieldVisitor.findById(req.params.id)
+            .select('-password') // Exclude password
+            .lean();
+
+        if (fieldVisitor) {
+            res.json(fieldVisitor);
+        } else {
+            res.status(404).json({ message: 'Field Visitor not found' });
+        }
+    } catch (error) {
+        console.error('Fetch FV By ID Error:', error);
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
+module.exports = { registerFieldVisitor, getFieldVisitors, getFieldVisitorById, sendVerificationEmail };

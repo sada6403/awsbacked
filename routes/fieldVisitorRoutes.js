@@ -7,6 +7,9 @@ router.route('/')
     .post(protect, authorize('manager'), registerFieldVisitor)
     .get(protect, getFieldVisitors);
 
+router.route('/:id')
+    .get(protect, getFieldVisitorById);
+
 // Email verification specific route
 router.post('/send-otp', sendVerificationEmail);
 
