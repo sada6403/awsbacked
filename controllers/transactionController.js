@@ -200,7 +200,14 @@ const createTransaction = async (req, res) => {
         console.error('[createTransaction] Stack:', error.stack);
         console.error('[createTransaction] Body:', req.body);
         console.error('[createTransaction] User:', req.user);
-        res.status(500).json({ success: false, message: error.message || 'Failed to create transaction' });
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to create transaction',
+            debug: {
+                error: error.toString(),
+                stack: error.stack
+            }
+        });
     }
 };
 
