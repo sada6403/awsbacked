@@ -16,9 +16,8 @@ exports.generateOtp = async (req, res) => {
         const expires = new Date(Date.now() + 5 * 60 * 1000);
 
         // Update or Insert (Upsert) into MongoDB
-        // strict: false handles if the schema is strict but we want to be safe
         await Otp.findOneAndUpdate(
-            { mobile },
+            { identifier: mobile }, // Key
             {
                 otp,
                 expires,
@@ -53,37 +52,38 @@ exports.generateOtp = async (req, res) => {
 
 exports.verifyOtp = async (req, res) => {
     try {
-        const { mobile, otp } = req.body;
-        console.log('Verifying OTP for:', mobile, 'Entered OTP:', otp);
+        const { mobile, email, otp } = req.body;
+        const identifier = mobile || email; // Support both
+        console.log('Verifying OTP for:', identifier, 'Entered OTP:', otp);
 
-        if (!mobile || !otp) {
-            return res.status(400).json({ success: false, message: 'Mobile and OTP required' });
+        if (!identifier || !otp) {
+            return res.status(400).json({ success: false, message: 'Mobile/Email and OTP required' });
         }
 
         // Find in DB
-        const record = await Otp.findOne({ mobile });
+        const record = await Otp.findOne({ identifier });
 
         if (!record) {
-            console.log('OTP Record not found in DB for:', mobile);
-            return res.status(400).json({ success: false, message: 'No OTP found for this number' });
+            console.log('OTP Record not found in DB for:', identifier);
+            return res.status(400).json({ success: false, message: 'No OTP found for this number/email' });
         }
 
         // Check Expiry
         if (new Date() > record.expires) {
-            await Otp.deleteOne({ mobile });
-            console.log('OTP Expired for:', mobile);
+            await Otp.deleteOne({ identifier });
+            console.log('OTP Expired for:', identifier);
             return res.status(400).json({ success: false, message: 'OTP expired' });
         }
 
         // Check Match
         if (record.otp !== otp) {
-            console.log('Invalid OTP for:', mobile);
+            console.log('Invalid OTP for:', identifier);
             return res.status(400).json({ success: false, message: 'Invalid OTP' });
         }
 
         // Success - Consume OTP
-        await Otp.deleteOne({ mobile });
-        console.log('OTP Verified Successfully for:', mobile);
+        await Otp.deleteOne({ identifier });
+        console.log('OTP Verified Successfully for:', identifier);
 
         res.status(200).json({ success: true, message: 'OTP verified successfully' });
 

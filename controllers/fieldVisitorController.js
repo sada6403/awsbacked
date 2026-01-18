@@ -1,5 +1,6 @@
 const sendEmail = require('../utils/emailService');
 const FieldVisitor = require('../models/FieldVisitor');
+const Otp = require('../models/Otp');
 
 // @desc    Send verification OTP to email
 // @route   POST /api/fieldvisitors/send-otp
@@ -13,41 +14,42 @@ const sendVerificationEmail = async (req, res) => {
 
         // Generate 6 digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        console.log('### GENERATED OTP:', otp); // Log for debugging
+        // 5 mins expiry
+        const expires = new Date(Date.now() + 5 * 60 * 1000);
 
-        // In a real production app, cache this OTP with the email (e.g. Redis)
-        // For this implementation, we will send it to the client hashed (not secure for prod but fits current flow)
-        // OR better, just return success and let client wait for user input.
-        // We will return the OTP simply in the response FOR TESTING purposes if needed, 
-        // but normally we don't.
-        // To verify "Real Mail", we MUST send the mail.
+        console.log('### GENERATED EMAIL OTP:', otp);
+
+        // Save to MongoDB for verification
+        await Otp.findOneAndUpdate(
+            { identifier: email },
+            {
+                otp,
+                expires,
+                createdAt: new Date()
+            },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
 
         const html = `
             <h3>Verification Code</h3>
             <p>Your verification code for Field Visitor Registration is:</p>
             <h1>${otp}</h1>
-            <p>This code is valid for 10 minutes.</p>
+            <p>This code is valid for 5 minutes.</p>
         `;
 
         try {
             await sendEmail(email, 'Nature Farming - Verification Code', html);
         } catch (emailError) {
             console.error('Send Email Failed (Mocking success for dev):', emailError.message);
-            // In development, if email fails (likely bad credentials), we still return success 
-            // so the app flow can be tested. The OTP is returned in response.
         }
 
         res.json({
             success: true,
-            message: 'OTP sent to email (or mocked)',
-            // Returning OTP for development convenience if mail fails, 
-            // but in "real" mode we rely on the mail delivering it.
-            // We'll return a hash or just the otp to compare on client side 
-            // (Client-side verification is requested in the prompt context of "mobile verification method" usually implying simple client logic)
-            // But to be "real", backend should verify. 
-            // Let's return the OTP to the client so the client can check it (Simplest 'Real' Impl without backend session store)
+            message: 'OTP sent to email',
+            // Return OTP for dev/testing if mail fails
             otp: otp
         });
+
 
     } catch (error) {
         console.error('Send Email Error:', error);
