@@ -180,7 +180,7 @@ const createTransaction = async (req, res) => {
                     billNumber: billNumber,
                     date: new Date().toLocaleDateString(),
                     amount: totalAmount
-                }, pdfUrl);
+                }, saved.pdfUrl); // Use saved.pdfUrl
                 console.log('[createTransaction] Email Result:', JSON.stringify(mailRes));
             } else {
                 console.warn('[createTransaction] SKIP EMAIL: Member has no email address.');
@@ -209,7 +209,7 @@ const createTransaction = async (req, res) => {
                     body,
                     date: new Date(),
                     isRead: false,
-                    attachment: pdfUrl,
+                    attachment: saved.pdfUrl, // Use saved.pdfUrl
                     transactionId: saved._id,
                     fieldVisitorId: fv._id,
                     memberId: member._id,
@@ -225,7 +225,7 @@ const createTransaction = async (req, res) => {
                     body,
                     date: new Date(),
                     isRead: false,
-                    attachment: pdfUrl,
+                    attachment: saved.pdfUrl, // Use saved.pdfUrl
                     transactionId: saved._id,
                     managerId: manager._id,
                     memberId: member._id,
