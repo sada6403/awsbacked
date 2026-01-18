@@ -123,7 +123,15 @@ const createTransaction = async (req, res) => {
                 // If save is successful, break the loop
                 break;
             } catch (err) {
-                if (err.code === 11000 && err.keyPattern && err.keyPattern.billNumber) {
+                console.error('[createTransaction] Error caught during attempt', attempt, ':', err);
+                console.error('[createTransaction] Error Code:', err.code, 'KeyPattern:', err.keyPattern);
+
+                // Check for duplicate key error on billNumber
+                // Use robust check handling both keyPattern and error message text
+                const isDuplicate = err.code === 11000 || err.code === 11001 || (err.message && err.message.includes('E11000'));
+                const isBillNumber = (err.keyPattern && err.keyPattern.billNumber) || (err.message && err.message.includes('billNumber'));
+
+                if (isDuplicate && isBillNumber) {
                     console.warn(`[createTransaction] Bill number collision (Attempt ${attempt}/${maxRetries}): ${billNumber}. Retrying...`);
                     if (attempt === maxRetries) {
                         throw new Error('Failed to generate unique bill number after multiple attempts. Please try again.');
