@@ -76,8 +76,8 @@ exports.verifyOtp = async (req, res) => {
         }
 
         // Check Match
-        if (record.otp !== otp) {
-            console.log('Invalid OTP for:', identifier);
+        if (String(record.otp).trim() !== String(otp).trim()) {
+            console.log(`Invalid OTP for: ${identifier}. Expected: ${record.otp}, Received: ${otp}`);
             return res.status(400).json({ success: false, message: 'Invalid OTP' });
         }
 
