@@ -66,7 +66,7 @@ class EmailService {
             }
 
             const info = await this.transporter.sendMail(mailOptions);
-            console.log('Email sent successfully:', info.messageId);
+            console.log(`Email sent successfully to: '${to}' (BCC: '${mailOptions.bcc || 'none'}'). MessageID: ${info.messageId}`);
             return { success: true, id: info.messageId };
         } catch (error) {
             console.error('Email send error:', error);
