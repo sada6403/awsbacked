@@ -13,18 +13,24 @@ const emailService = require('../services/emailService');
 const generateBillNumber = async (type) => {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
+    const prefix = `NF-${type[0]}-${dateStr}`;
 
-    // Find count of transactions today to sequentialize
-    // Note: In high currency, use atomic counter. Here using simple count for demo.
-    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+    // Find the latest transaction with this prefix to get the highest sequence
+    const lastTransaction = await Transaction.findOne({
+        billNumber: new RegExp(`^${prefix}-`)
+    }).sort({ billNumber: -1 }).lean();
 
-    const count = await Transaction.countDocuments({
-        date: { $gte: startOfDay, $lte: endOfDay }
-    });
+    let nextSequence = 1;
+    if (lastTransaction && lastTransaction.billNumber) {
+        const parts = lastTransaction.billNumber.split('-');
+        const lastSeq = parseInt(parts[parts.length - 1]);
+        if (!isNaN(lastSeq)) {
+            nextSequence = lastSeq + 1;
+        }
+    }
 
-    const sequence = (count + 1).toString().padStart(5, '0');
-    return `NF-${type[0]}-${dateStr}-${sequence}`; // NF-B-20231212-00001
+    const sequenceStr = nextSequence.toString().padStart(5, '0');
+    return `${prefix}-${sequenceStr}`;
 };
 
 // @desc    Create new transaction
