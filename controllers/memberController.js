@@ -1,4 +1,5 @@
 const Member = require('../models/Member');
+const BranchManager = require('../models/BranchManager');
 
 // @desc    Register a member
 // @route   POST /api/members
@@ -34,7 +35,7 @@ const registerMember = async (req, res, next) => {
             mobile,
             email,
             nic,
-            memberCode: memberCode || `MEM-${Date.now()}`,
+            memberCode: memberCode || await generateMemberCode(branchId, req.user),
             registrationData,
             fieldVisitorId: req.user ? req.user._id : undefined,
             branchId
@@ -233,6 +234,52 @@ const getMembers = async (req, res) => {
             message: 'Failed to retrieve members',
             error: error.message
         });
+    }
+};
+
+const generateMemberCode = async (branchId, user) => {
+    try {
+        let branchName = '';
+
+        // 1. Get Branch Name
+        if (user && user.role === 'manager' && user.branchName) {
+            branchName = user.branchName;
+        } else {
+            // Field Visitor or missing branchName
+            const manager = await BranchManager.findOne({ branchId });
+            if (manager) {
+                branchName = manager.branchName;
+            }
+        }
+
+        // Fallback if branch name not found
+        if (!branchName) branchName = 'Kalmunai';
+
+        // 2. Generate Prefix (FA + First 2 letters of Branch)
+        const cleanBranchName = branchName.replace(/[^a-zA-Z]/g, '');
+        const branchCode = cleanBranchName.substring(0, 2).toUpperCase();
+        const prefix = `FA${branchCode}`;
+
+        // 3. Find latest member with this prefix
+        const lastMember = await Member.findOne({
+            memberCode: { $regex: `^${prefix}\\d+$` }
+        }).sort({ memberCode: -1 });
+
+        let sequence = 1;
+        if (lastMember && lastMember.memberCode) {
+            const numPart = lastMember.memberCode.replace(prefix, '');
+            const parsed = parseInt(numPart, 10);
+            if (!isNaN(parsed)) {
+                sequence = parsed + 1;
+            }
+        }
+
+        // 4. Format: Prefix + 3 digit sequence (e.g., FAKA001)
+        return `${prefix}${sequence.toString().padStart(3, '0')}`;
+
+    } catch (error) {
+        console.error('Error generating member code:', error);
+        return `MEM-${Date.now()}`;
     }
 };
 
