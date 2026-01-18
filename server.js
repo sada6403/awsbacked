@@ -291,6 +291,9 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
+// Global Error Handler
+app.use(errorHandler);
+
 // Root Route
 app.get('/', (req, res) => {
     res.send('API is running...');
