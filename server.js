@@ -131,10 +131,11 @@ app.get('/api/health', (req, res) => {
 app.get('/api/debug-email', async (req, res) => {
     try {
         const emailService = require('./services/emailService');
-        const testEmail = process.env.EMAIL_USER;
+        // Allow sending to a specific address via ?to=...
+        const testEmail = req.query.to || process.env.EMAIL_USER;
 
         if (!testEmail) {
-            return res.json({ success: false, message: 'EMAIL_USER not set' });
+            return res.json({ success: false, message: 'EMAIL_USER not set and no ?to= param' });
         }
 
         console.log('Testing Email via /api/debug-email to:', testEmail);
@@ -146,7 +147,7 @@ app.get('/api/debug-email', async (req, res) => {
             amount: 777.00
         }, null);
 
-        res.json({ success: true, message: 'Debug email attempt finished', result });
+        res.json({ success: true, message: `Debug email sent to ${testEmail}`, result });
     } catch (e) {
         console.error(e);
         res.status(500).json({ success: false, error: e.message });
