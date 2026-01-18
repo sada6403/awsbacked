@@ -28,7 +28,16 @@ exports.generateOtp = async (req, res) => {
         );
 
         // Send SMS
-        await smsService.sendOTP(mobile, otp);
+        const smsResult = await smsService.sendOTP(mobile, otp);
+
+        if (!smsResult || !smsResult.success) {
+            console.error('SMS Send Failed:', smsResult);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to send SMS upstream',
+                details: smsResult // Optional: expose details for debugging
+            });
+        }
 
         console.log(`OTP Generated for ${mobile}: ${otp}`); // Keep for debug
 
