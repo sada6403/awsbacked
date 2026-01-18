@@ -246,8 +246,10 @@ const getMembers = async (req, res) => {
                     totalBuyAmount: 1,
                     totalSellAmount: 1,
                     totalBuyQuantity: 1,
+                    totalBuyQuantity: 1,
                     totalSellQuantity: 1,
-                    registeredAt: 1
+                    registeredAt: 1,
+                    registrationData: 1
                 }
             }
         ];
@@ -273,7 +275,10 @@ const getMembers = async (req, res) => {
             totalSellAmount: m.totalSellAmount || 0,
             totalBuyQuantity: m.totalBuyQuantity || 0,
             totalSellQuantity: m.totalSellQuantity || 0,
-            registeredAt: m.registeredAt
+            totalBuyQuantity: m.totalBuyQuantity || 0,
+            totalSellQuantity: m.totalSellQuantity || 0,
+            registeredAt: m.registeredAt,
+            registrationData: m.registrationData || {}
         }));
 
         console.log(`[getMembers] Returning ${data.length} formatted members`);
