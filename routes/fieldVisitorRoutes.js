@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { registerFieldVisitor, getFieldVisitors, sendVerificationEmail } = require('../controllers/fieldVisitorController');
+const { registerFieldVisitor, getFieldVisitors, getFieldVisitorById, sendVerificationEmail } = require('../controllers/fieldVisitorController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 router.route('/')
