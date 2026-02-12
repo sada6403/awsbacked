@@ -1,0 +1,2 @@
+--- Branch ID to Code Mapping ---
+- Branch: Jaffna (Kondavil) | ID: branch-jaffna-kondavil | Code: JK

@@ -188,6 +188,7 @@ const registerFieldVisitor = async (req, res, next) => {
         // Return the saved document immediately with consistent field names
         res.status(201).json({
             success: true,
+            created: true,
             message: 'Field Visitor registered successfully',
             data: {
                 id: savedFieldVisitor._id.toString(), // Use 'id' for Flutter compatibility
@@ -207,10 +208,30 @@ const registerFieldVisitor = async (req, res, next) => {
         console.error('Field Visitor Registration Error:', error);
 
         // Duplicate key error
-        if (error.code === 11000) {
+        if (error.code === 11000 || error.code === 11001) {
+            const { phone, nic } = req.body;
+            const existing = await FieldVisitor.findOne({ $or: [{ phone }, { nic }] });
+
+            if (existing) {
+                console.log(`[registerFieldVisitor] Duplicate detected. Returning existing Field Visitor.`);
+                return res.status(200).json({
+                    success: true,
+                    created: false,
+                    message: 'Field Visitor with this info already exists',
+                    data: {
+                        id: existing._id.toString(),
+                        _id: existing._id,
+                        name: existing.name,
+                        userId: existing.userId,
+                        phone: existing.phone,
+                        role: 'field_visitor'
+                    }
+                });
+            }
+
             return res.status(400).json({
                 success: false,
-                message: 'Field Visitor with this User ID already exists'
+                message: 'Field Visitor with this info already exists'
             });
         }
 
@@ -236,17 +257,21 @@ const registerFieldVisitor = async (req, res, next) => {
 // @route   GET /api/fieldvisitors
 // @access  Private
 const getFieldVisitors = async (req, res) => {
-    const pageSize = 10;
-    const page = Number(req.query.pageNumber) || 1;
+    try {
+        const branchId = req.user?.branchId || 'default-branch';
+        const fieldVisitors = await FieldVisitor.find({ branchId })
+            .sort({ name: 1 })
+            .lean();
 
-    const branchId = req.user?.branchId || 'default-branch';
-    const count = await FieldVisitor.countDocuments({ branchId });
-    const fieldVisitors = await FieldVisitor.find({ branchId })
-        .limit(pageSize)
-        .skip(pageSize * (page - 1))
-        .lean(); // Use lean to get plain JS objects
-
-    res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize) });
+        res.json({
+            success: true,
+            fieldVisitors,
+            count: fieldVisitors.length
+        });
+    } catch (error) {
+        console.error('Fetch Field Visitors Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
 };
 
 // Notification require moved to top

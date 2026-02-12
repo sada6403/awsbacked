@@ -30,34 +30,31 @@ const registerMember = async (req, res, next) => {
         // Generate Custom Member ID
         let generatedMemberCode = memberCode;
         if (!generatedMemberCode) {
-            // 1. Get Branch Code
-            let branchCode = 'XX'; // Default
-
-            // Try to find branch name from BranchManager
-            // If user is manager, they have branchName. If FieldVisitor, need to fetch.
-            let branchNameStr = '';
-
-            if (req.user.role === 'manager') {
-                branchNameStr = req.user.branchName;
-            } else {
-                // Field Visitor: find their manager's branch or simply use the branchId mapping if possible
-                // Better: Fetch BranchManager for this branchId
-                const BranchManager = require('../models/BranchManager');
-                const branchManager = await BranchManager.findOne({ branchId });
-                if (branchManager) {
-                    branchNameStr = branchManager.branchName;
+            // Function to get branch code from user ID or branchId
+            const getBranchCode = () => {
+                // 1. Try to extract from userId/code (Pattern: XX-CODE-XXX)
+                const userCode = req.user?.userId || req.user?.code || '';
+                if (userCode.includes('-')) {
+                    const parts = userCode.split('-');
+                    if (parts.length >= 2) return parts[1].toUpperCase();
                 }
-            }
 
-            // Map branch name to 2-letter code
-            if (branchNameStr) {
-                const nameUpper = branchNameStr.toUpperCase();
-                if (nameUpper.includes('KALMUNAI')) branchCode = 'KA';
-                else if (nameUpper.includes('TRINCO')) branchCode = 'TR';
-                else if (nameUpper.includes('KONDAVIL')) branchCode = 'JK'; // Jaffna (Kondavil)
-                else if (nameUpper.includes('SAVAGACHERI') || nameUpper.includes('CHAVAKACHCHERI')) branchCode = 'JS'; // Jaffna (Savagacheri)
-                else branchCode = nameUpper.substring(0, 2);
-            }
+                // 2. Fallback: Map from branchId
+                const branchMap = {
+                    'branch-kalmunai': 'KA',
+                    'branch-jaffna-kondavil': 'JK',
+                    'branch-jaffna-savagacheri': 'JS',
+                    'branch-trinco': 'TR',
+                    'JA-BRANCH': 'JA' // Seen in audit
+                };
+
+                if (branchMap[branchId]) return branchMap[branchId];
+
+                // 3. Last Fallback: First 2 initials of branchId or default
+                return (branchId || '').substring(0, 2).toUpperCase() || 'XX';
+            };
+
+            const branchCode = getBranchCode();
 
             // 2. Find last member code for this branch prefix
             const prefix = `FA${branchCode}`;
@@ -98,6 +95,7 @@ const registerMember = async (req, res, next) => {
         // Return the saved document immediately
         res.status(201).json({
             success: true,
+            created: true,
             message: 'Member registered successfully',
             data: savedMember
         });
@@ -105,10 +103,27 @@ const registerMember = async (req, res, next) => {
         console.error('Member Registration Error:', error);
 
         // Duplicate key error
-        if (error.code === 11000) {
+        if (error.code === 11000 || error.code === 11001) {
+            const field = Object.keys(error.keyPattern || {})[0] || 'data';
+
+            // For older APKs, we might want to return 200 OK with the existing member
+            // Search for the existing member by NIC or Mobile
+            const { nic, mobile } = req.body;
+            const existing = await Member.findOne({ $or: [{ nic }, { mobile }] });
+
+            if (existing) {
+                console.log(`[registerMember] Duplicate ${field} detected. Returning existing member.`);
+                return res.status(200).json({
+                    success: true,
+                    created: false,
+                    message: `Member with this ${field} already exists`,
+                    data: existing
+                });
+            }
+
             return res.status(400).json({
                 success: false,
-                message: 'Member with this code or data already exists'
+                message: `Member with this ${field} already exists`
             });
         }
 
@@ -228,8 +243,6 @@ const getMembers = async (req, res) => {
             }] : []),
             // Sort by registration date descending
             { $sort: { registeredAt: -1 } },
-            // Limit to 50 for performance
-            { $limit: 50 },
             {
                 $project: {
                     _id: 1,

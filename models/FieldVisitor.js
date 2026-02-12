@@ -5,7 +5,7 @@ const FieldVisitorSchema = new mongoose.Schema({
     name: { type: String, required: true },
     fullName: { type: String },
     userId: { type: String, required: true, unique: true },
-    phone: { type: String, required: true },
+    phone: { type: String, required: true, unique: true },
     email: { type: String }, // Made optional in schema but required in logic if needed
     password: { type: String, required: true },
     code: { type: String },
@@ -14,7 +14,7 @@ const FieldVisitorSchema = new mongoose.Schema({
     postalAddress: { type: String },
     permanentAddress: { type: String },
     dob: { type: Date },
-    nic: { type: String },
+    nic: { type: String, unique: true, sparse: true },
     gender: { type: String },
     civilStatus: { type: String },
 

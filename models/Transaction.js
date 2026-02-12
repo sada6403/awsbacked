@@ -12,7 +12,8 @@ const TransactionSchema = new mongoose.Schema({
     totalAmount: { type: Number, required: true },
     date: { type: Date, default: Date.now },
     branchId: { type: String, required: true, default: 'default-branch', index: true },
-    pdfUrl: { type: String } // Path to generated PDF
+    pdfUrl: { type: String }, // Path to generated PDF
+    idempotencyKey: { type: String, unique: true, sparse: true } // Key to prevent duplicate transactions
 }, { timestamps: true });
 
 module.exports = mongoose.model('Transaction', TransactionSchema);

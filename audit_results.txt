@@ -1,0 +1,12 @@
+--- Full Database User Audit ---
+
+Managers (1):
+- BM-JK-001 | Jaffna Manager | Branch: Jaffna (Kondavil) | ID: branch-jaffna-kondavil
+
+Field Visitors (1):
+- FV001 | John Field | BranchID: undefined | Area: undefined
+
+Members (3):
+- FAJA001 | Jaffna Member 1 | BranchID: JA-BRANCH
+- FATEST001 | sabi | BranchID: branch-test
+- FATEST002 | MONI | BranchID: branch-jaffna-kondavil

@@ -3,9 +3,9 @@ const mongoose = require('mongoose');
 const MemberSchema = new mongoose.Schema({
     name: { type: String, required: true },
     address: { type: String, required: true },
-    mobile: { type: String, required: true },
+    mobile: { type: String, required: true, unique: true },
     email: { type: String }, // Optional
-    nic: { type: String, required: true },
+    nic: { type: String, required: true, unique: true },
     memberCode: { type: String, unique: true }, // Generated ID
     fieldVisitorId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldVisitor', required: true, index: true },
     branchId: { type: String, required: true, default: 'default-branch', index: true },

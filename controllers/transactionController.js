@@ -83,6 +83,24 @@ const createTransaction = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid quantity or unit price' });
         }
 
+        // --- Idempotency Check ---
+        // Create a unique key for this request valid for 5 minutes
+        const crypto = require('crypto');
+        const idempotencyData = `${memberId}-${fieldVisitorId}-${productId}-${quantity}-${totalAmount}-${Math.floor(Date.now() / (5 * 60 * 1000))}`;
+        const idempotencyKey = crypto.createHash('md5').update(idempotencyData).digest('hex');
+
+        // Check for existing transaction within idempotency window
+        const existingTx = await Transaction.findOne({ idempotencyKey }).populate('memberId', 'name mobile branchId').populate('fieldVisitorId', 'name userId branchId').lean();
+        if (existingTx) {
+            console.log('[createTransaction] Duplicate request detected. Returning existing transaction:', existingTx.billNumber);
+            return res.status(200).json({
+                success: true,
+                created: false,
+                message: 'Already saved',
+                data: existingTx
+            });
+        }
+
         const maxRetries = 3;
         let attempt = 0;
         let saved = null;
@@ -105,7 +123,8 @@ const createTransaction = async (req, res) => {
                     unitPrice: Number(unitPrice),
                     totalAmount,
                     branchId,
-                    date: new Date() // Explicitly set date to ensure it exists for PDF
+                    idempotencyKey,
+                    date: new Date()
                 });
 
                 // Generate PDF
@@ -115,31 +134,26 @@ const createTransaction = async (req, res) => {
                     transaction.pdfUrl = pdfUrl;
                 } catch (pdfErr) {
                     console.error('[createTransaction] PDF Generation Error:', pdfErr.message);
-                    // We fail here because PDF is critical, but we don't retry for PDF generation errors
                     throw new Error(`PDF Generation failed: ${pdfErr.message}`);
                 }
 
                 saved = await transaction.save();
-                // If save is successful, break the loop
                 break;
             } catch (err) {
-                console.error('[createTransaction] Error caught during attempt', attempt, ':', err);
-                console.error('[createTransaction] Error Code:', err.code, 'KeyPattern:', err.keyPattern);
-
-                // Check for duplicate key error on billNumber
-                // Use robust check handling both keyPattern and error message text
                 const isDuplicate = err.code === 11000 || err.code === 11001 || (err.message && err.message.includes('E11000'));
-                const isBillNumber = (err.keyPattern && err.keyPattern.billNumber) || (err.message && err.message.includes('billNumber'));
 
+                // If it's a duplicate on idempotencyKey, return the existing one
+                if (isDuplicate && err.keyPattern && err.keyPattern.idempotencyKey) {
+                    const finalCheck = await Transaction.findOne({ idempotencyKey }).populate('memberId', 'name mobile branchId').populate('fieldVisitorId', 'name userId branchId').lean();
+                    return res.status(200).json({ success: true, created: false, message: 'Already saved', data: finalCheck });
+                }
+
+                const isBillNumber = (err.keyPattern && err.keyPattern.billNumber) || (err.message && err.message.includes('billNumber'));
                 if (isDuplicate && isBillNumber) {
                     console.warn(`[createTransaction] Bill number collision (Attempt ${attempt}/${maxRetries}): ${billNumber}. Retrying...`);
-                    if (attempt === maxRetries) {
-                        throw new Error('Failed to generate unique bill number after multiple attempts. Please try again.');
-                    }
-                    // Continue to next iteration to regenerate bill number
+                    if (attempt === maxRetries) throw new Error('Failed to generate unique bill number.');
                     continue;
                 } else {
-                    // Start of non-retryable error
                     throw err;
                 }
             }
