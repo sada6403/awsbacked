@@ -4,10 +4,10 @@
             "$oid": "65a1b2c3d4e5f6a7b8c9d0e1"
         },
         "company_code": "company-001",
-        "name": "Nature Farming",
+        "name": "Nature Farming (Pvt) Ltd",
         "address": "Kilinochi, Sri Lanka",
-        "phone": "0712345678",
-        "email": "info@naturefarming.lk",
+        "phone": "024 433 5099",
+        "email": "nffplantation.offficial.it@gmil.com",
         "status": "active",
         "created_at": {
             "$date": "2025-01-15T10:00:00.000Z"

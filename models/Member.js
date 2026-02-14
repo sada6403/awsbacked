@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const MemberSchema = new mongoose.Schema({
     name: { type: String, required: true },
-    address: { type: String, required: true },
+    address: { type: String }, // Can be empty if postal_address is used
+    postal_address: { type: String }, // Support for existing data
     mobile: { type: String, required: true, unique: true },
     email: { type: String }, // Optional
     nic: { type: String, required: true, unique: true },

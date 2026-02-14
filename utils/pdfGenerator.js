@@ -40,11 +40,11 @@ const generateBillPDF = (transaction, member, fieldVisitor) => {
             const headerY = 45;
             const leftX = 110;
 
-            doc.fillColor(black).fontSize(20).font('Helvetica-Bold').text('Nature Farming', leftX, headerY);
+            doc.fillColor(black).fontSize(20).font('Helvetica-Bold').text('Nature Farming (Pvt) Ltd', leftX, headerY);
             doc.fontSize(10).font('Helvetica')
                 .text('Kilinochi, Sri Lanka', leftX, headerY + 25)
-                .text('Phone: 0712345678', leftX, headerY + 40)
-                .text('Email: info@naturefarming.com', leftX, headerY + 55);
+                .text('Phone: 024 433 5099', leftX, headerY + 40)
+                .text('Email: nffplantation.offficial.it@gmil.com', leftX, headerY + 55);
 
             // Title (Right Aligned)
             doc.fillColor(primaryColor).fontSize(28).font('Helvetica-Bold')
@@ -82,8 +82,8 @@ const generateBillPDF = (transaction, member, fieldVisitor) => {
 
             // Col 1: Member
             doc.text(`Name: ${member.name || 'Unknown'}`, col1, contentTop);
-            doc.text(`Phone: ${member.mobile || 'N/A'}`, col1, contentTop + 15);
-            doc.text(`Addr: ${member.address || 'N/A'}`, col1, contentTop + 30, { width: colWidth - 5 });
+            doc.text(`Phone: ${member.mobile || member.phone || 'N/A'}`, col1, contentTop + 15);
+            doc.text(`Addr: ${member.address || member.postal_address || 'N/A'}`, col1, contentTop + 30, { width: colWidth - 5 });
 
             // Col 2: Field Visitor
             doc.text(`Name: ${fieldVisitor.name || 'Unknown'}`, col2, contentTop);

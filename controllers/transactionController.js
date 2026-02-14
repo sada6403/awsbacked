@@ -321,7 +321,7 @@ const downloadBill = async (req, res) => {
 
         // Find transaction with populated data (Include address/phone/area for PDF)
         const transaction = await Transaction.findById(id)
-            .populate('memberId', 'name mobile memberCode address')
+            .populate('memberId', 'name mobile phone memberCode address postal_address')
             .populate('fieldVisitorId', 'name userId fullName phone area')
             .lean();
 

@@ -248,7 +248,9 @@ const getMembers = async (req, res) => {
                     _id: 1,
                     name: 1,
                     mobile: 1,
+                    mobile: 1,
                     address: 1,
+                    postal_address: 1,
                     nic: 1,
                     memberCode: 1,
                     fieldVisitorId: 1,
@@ -278,8 +280,8 @@ const getMembers = async (req, res) => {
             name: m.name,
             full_name: m.name, // Alias for Flutter compatibility
             mobile: m.mobile,
-            address: m.address,
-            postal_address: m.address, // Alias for Flutter compatibility
+            address: m.address || m.postal_address,
+            postal_address: m.postal_address || m.address, // Alias for Flutter compatibility
             nic: m.nic,
             member_code: m.memberCode,
             memberCode: m.memberCode, // Alternative field name
