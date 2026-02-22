@@ -7,6 +7,8 @@ const ManagersMember = require('../models/ManagersMember');
 const ExtraMember = require('../models/ExtraMember');
 const mongoose = require('mongoose');
 
+const BranchManager = require('../models/BranchManager');
+
 const branchFilter = (user) => ({ branchId: user.branchId || 'default-branch' });
 
 // @desc Manager Dashboard: Field Visitors, totals (current month), pie-ready data, monthly bar chart
@@ -26,12 +28,30 @@ const getManagerDashboard = async (req, res) => {
             { $match: { branchId, date: { $gte: startOfMonth, $lte: endOfMonth } } },
             {
                 $group: {
-                    _id: '$fieldVisitorId',
+                    _id: { fieldVisitorId: '$fieldVisitorId', type: '$type' },
                     totalAmount: { $sum: '$totalAmount' },
                     transactionCount: { $sum: 1 }
                 }
             }
         ]);
+
+        let branchBuyAmount = 0;
+        let branchSellAmount = 0;
+
+        const contributionMap = new Map();
+
+        contributions.forEach(c => {
+            const fvId = c._id.fieldVisitorId?.toString();
+            if (!contributionMap.has(fvId)) {
+                contributionMap.set(fvId, { totalAmount: 0, transactionCount: 0 });
+            }
+            const fvContrib = contributionMap.get(fvId);
+            fvContrib.totalAmount += c.totalAmount;
+            fvContrib.transactionCount += c.transactionCount;
+
+            if (c._id.type === 'buy') branchBuyAmount += c.totalAmount;
+            else if (c._id.type === 'sell') branchSellAmount += c.totalAmount;
+        });
 
         // Member counts per field visitor (using ExtraMember)
         const visitors = await FieldVisitor.find({ branchId }).select('_id');
@@ -90,7 +110,7 @@ const getManagerDashboard = async (req, res) => {
             { $group: { _id: '$addedBy', count: { $sum: 1 } } }
         ]);
 
-        const contributionMap = new Map(contributions.map(c => [c._id?.toString(), c]));
+        // const contributionMap = handled above
         const memberMap = new Map(memberCounts.map(m => [m._id?.toString(), m.memberCount]));
         const leadMap = new Map(leadCounts.map(l => [l._id?.toString(), l.leadCount]));
         const managerMap = new Map(managerMemberCounts.map(m => [m._id?.toString(), m.count]));
@@ -111,6 +131,7 @@ const getManagerDashboard = async (req, res) => {
                 userId: fv.userId,
                 phone: fv.phone,
                 totalAmount: contrib.totalAmount,
+                amount: contrib.totalAmount, // Added 'amount' key for Flutter compatibility (Manager Dashboard)
                 transactionCount: contrib.transactionCount,
                 memberCount: totalMembers,
                 leadCount: leadMap.get(key) || 0
@@ -172,10 +193,16 @@ const getManagerDashboard = async (req, res) => {
             isRead: false
         });
 
+        const manager = await BranchManager.findById(req.user._id).lean();
+        const walletBalance = manager?.walletBalance || 0;
+
         res.json({
             success: true,
             data: {
                 branchId,
+                walletBalance,
+                buy: { amount: branchBuyAmount },
+                sell: { amount: branchSellAmount },
                 totalBranchAmount,
                 totalTransactions,
                 totalMembers,
