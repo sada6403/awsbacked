@@ -282,16 +282,17 @@ const getFieldVisitors = async (req, res) => {
         };
 
         // Only apply pagination if explicitly requested
+        let fieldVisitors;
         if (pageNumber && pageSize) {
             const page = Number(pageNumber);
             query = query.limit(pageSize).skip(pageSize * (page - 1));
-            let fieldVisitors = await query.lean();
+            fieldVisitors = await query.lean();
             fieldVisitors = await attachCounts(fieldVisitors);
             return res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize), total: count });
         }
 
         // Otherwise, return all field visitors (no limit)
-        let fieldVisitors = await query.lean();
+        fieldVisitors = await query.lean();
         fieldVisitors = await attachCounts(fieldVisitors);
         res.json({ fieldVisitors, total: count });
     } catch (error) {
