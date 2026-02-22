@@ -516,7 +516,7 @@ const getYearlyAnalysis = async (req, res) => {
 const getDashboardStats = async (req, res) => {
     try {
         const branchId = req.user?.branchId || 'default-branch';
-        const isManager = req.user?.role === 'manager';
+        const isManager = req.user?.role === 'manager' || req.user?.role === 'branch_manager';
         let userId = req.user?._id;
 
         if (userId) {
@@ -594,8 +594,9 @@ const getDashboardStats = async (req, res) => {
             });
         }
 
+        let extraMembersCount = totalMembers;
         let recentExtraMembers = [];
-        const userOid = new mongoose.Types.ObjectId(userId);
+        const userOid = userId; // Already converted to ObjectId at line 523
 
         if (isManager) {
             const [mgrMembers, extMembers] = await Promise.all([
@@ -605,7 +606,11 @@ const getDashboardStats = async (req, res) => {
 
             // Merge and sort
             recentExtraMembers = [...mgrMembers, ...extMembers]
-                .sort((a, b) => (b.createdAt || b.collectedAt) - (a.createdAt || a.collectedAt))
+                .sort((a, b) => {
+                    const dateA = a.createdAt || a.collectedAt || 0;
+                    const dateB = b.createdAt || b.collectedAt || 0;
+                    return new Date(dateB) - new Date(dateA);
+                })
                 .slice(0, 10);
         } else {
             recentExtraMembers = await ExtraMember.find({ collectedBy: userOid })
