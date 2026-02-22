@@ -594,12 +594,25 @@ const getDashboardStats = async (req, res) => {
             });
         }
 
-        let extraMembersCount = totalMembers;
-        let recentMembersQuery = isManager ? { addedBy: userId } : { collectedBy: userId };
-        let recentExtraMembers = await (isManager ? ManagersMember : ExtraMember).find(recentMembersQuery)
-            .sort(isManager ? { createdAt: -1 } : { collectedAt: -1 })
-            .limit(10)
-            .lean();
+        let recentExtraMembers = [];
+        const userOid = new mongoose.Types.ObjectId(userId);
+
+        if (isManager) {
+            const [mgrMembers, extMembers] = await Promise.all([
+                ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).limit(10).lean(),
+                ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).limit(10).lean()
+            ]);
+
+            // Merge and sort
+            recentExtraMembers = [...mgrMembers, ...extMembers]
+                .sort((a, b) => (b.createdAt || b.collectedAt) - (a.createdAt || a.collectedAt))
+                .slice(0, 10);
+        } else {
+            recentExtraMembers = await ExtraMember.find({ collectedBy: userOid })
+                .sort({ collectedAt: -1 })
+                .limit(10)
+                .lean();
+        }
 
         // Get recent transactions
         const recentTxFilter = { branchId };
@@ -826,8 +839,8 @@ const getDashboardStats = async (req, res) => {
                 }),
 
                 // Manager's own members (from both legacy ManagersMember and current ExtraMember/Member collections)
-                managersMemberCount: (await ManagersMember.countDocuments({ addedBy: userId })) +
-                    (await ExtraMember.countDocuments({ collectedBy: userId, memberCode: { $ne: null, $ne: '' } })),
+                managersMemberCount: (await ManagersMember.countDocuments({ addedBy: userOid })) +
+                    (await ExtraMember.countDocuments({ collectedBy: userOid, memberCode: { $ne: null, $ne: '' } })),
 
                 // Annual Leads Count
                 annualLeads: await ExtraMember.countDocuments({
