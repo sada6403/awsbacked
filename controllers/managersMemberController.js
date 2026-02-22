@@ -1,7 +1,9 @@
+const mongoose = require('mongoose');
 const Otp = require('../models/Otp');
 const smsService = require('../services/smsService');
 const emailService = require('../services/emailService');
 const ManagersMember = require('../models/ManagersMember');
+const ExtraMember = require('../models/ExtraMember');
 const BranchManager = require('../models/BranchManager');
 const { generateMemberCode } = require('../utils/memberHelper');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
@@ -376,7 +378,6 @@ const registerMember = async (req, res) => {
 // @access  Private (Manager)
 const getMyMembers = async (req, res) => {
     try {
-        const mongoose = require('mongoose');
         const managerId = req.user._id;
         const userOid = new mongoose.Types.ObjectId(managerId);
 
@@ -404,7 +405,6 @@ const getMyMembers = async (req, res) => {
 // @access  Private (Manager)
 const getRecentMembers = async (req, res) => {
     try {
-        const mongoose = require('mongoose');
         const managerId = req.user._id;
         const userOid = new mongoose.Types.ObjectId(managerId);
         const limit = parseInt(req.query.limit) || 5;
@@ -433,7 +433,6 @@ const getRecentMembers = async (req, res) => {
 // @access  Private (Manager)
 const getMemberDetails = async (req, res) => {
     try {
-        const mongoose = require('mongoose');
         const managerId = req.user._id;
         const { memberId } = req.params;
         const userOid = new mongoose.Types.ObjectId(managerId);
