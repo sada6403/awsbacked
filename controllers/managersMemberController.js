@@ -376,8 +376,22 @@ const registerMember = async (req, res) => {
 // @access  Private (Manager)
 const getMyMembers = async (req, res) => {
     try {
+        const mongoose = require('mongoose');
         const managerId = req.user._id;
-        const members = await ManagersMember.find({ addedBy: managerId }).sort({ createdAt: -1 });
+        const userOid = new mongoose.Types.ObjectId(managerId);
+
+        const [mgrMembers, extMembers] = await Promise.all([
+            ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).lean(),
+            ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).lean()
+        ]);
+
+        // Merge and sort by date
+        const members = [...mgrMembers, ...extMembers].sort((a, b) => {
+            const dateA = a.createdAt || a.collectedAt || 0;
+            const dateB = b.createdAt || b.collectedAt || 0;
+            return dateB - dateA;
+        });
+
         res.status(200).json({ success: true, count: members.length, data: members });
     } catch (error) {
         console.error('Get Members Error:', error);
@@ -390,12 +404,22 @@ const getMyMembers = async (req, res) => {
 // @access  Private (Manager)
 const getRecentMembers = async (req, res) => {
     try {
+        const mongoose = require('mongoose');
         const managerId = req.user._id;
+        const userOid = new mongoose.Types.ObjectId(managerId);
         const limit = parseInt(req.query.limit) || 5;
 
-        const members = await ManagersMember.find({ addedBy: managerId })
-            .sort({ createdAt: -1 })
-            .limit(limit);
+        const [mgrMembers, extMembers] = await Promise.all([
+            ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).limit(limit).lean(),
+            ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).limit(limit).lean()
+        ]);
+
+        // Merge and sort
+        const members = [...mgrMembers, ...extMembers].sort((a, b) => {
+            const dateA = a.createdAt || a.collectedAt || 0;
+            const dateB = b.createdAt || b.collectedAt || 0;
+            return dateB - dateA;
+        }).slice(0, limit);
 
         res.status(200).json({ success: true, count: members.length, data: members });
     } catch (error) {
@@ -409,13 +433,22 @@ const getRecentMembers = async (req, res) => {
 // @access  Private (Manager)
 const getMemberDetails = async (req, res) => {
     try {
+        const mongoose = require('mongoose');
         const managerId = req.user._id;
         const { memberId } = req.params;
+        const userOid = new mongoose.Types.ObjectId(managerId);
 
-        const member = await ManagersMember.findOne({
+        let member = await ManagersMember.findOne({
             _id: memberId,
-            addedBy: managerId
+            addedBy: userOid
         });
+
+        if (!member) {
+            member = await ExtraMember.findOne({
+                _id: memberId,
+                collectedBy: userOid
+            });
+        }
 
         if (!member) {
             return res.status(404).json({ success: false, message: 'Member not found' });
