@@ -118,7 +118,7 @@ const registerMember = async (req, res, next) => {
             const { createAndSendNotification } = require('../utils/notificationHelper');
             await createAndSendNotification({
                 title: `Member Registered: ${savedMember.name}`,
-                body: 'Registration completed successfully.',
+                body: `Registration completed successfully for ${savedMember.name}. PDF details are available for download.`,
                 date: new Date(),
                 attachment: pdfUrl, // Save PDF URL here
                 memberId: savedMember._id,

@@ -4,6 +4,8 @@ const emailService = require('../services/emailService');
 const ExtraMember = require('../models/ExtraMember');
 const BranchManager = require('../models/BranchManager');
 const { generateMemberCode } = require('../utils/memberHelper');
+const { generateMemberPDF } = require('../utils/memberPdfGenerator');
+const { createAndSendNotification } = require('../utils/notificationHelper');
 
 // @desc    Send OTP for Member Registration
 // @route   POST /api/managers-members/send-otp
@@ -216,7 +218,33 @@ const verifyOtpsAndRegister = async (req, res) => {
         // Delete used OTPs
         await Otp.deleteMany({ identifier: { $in: [mobile, email] } });
 
-        res.status(201).json({ success: true, message: 'Member registered successfully', data: newMember });
+        // Generate PDF
+        let pdfUrl = '';
+        try {
+            pdfUrl = await generateMemberPDF(savedMember);
+            savedMember.pdfUrl = pdfUrl;
+            await savedMember.save();
+        } catch (pdfErr) {
+            console.error('Member PDF (Manager) Generation Error:', pdfErr);
+        }
+
+        // Create notification
+        try {
+            await createAndSendNotification({
+                title: `Member Registered: ${savedMember.name}`,
+                body: `Registration completed successfully for ${savedMember.name}. PDF details are available for download.`,
+                date: new Date(),
+                attachment: pdfUrl,
+                memberId: savedMember._id,
+                userId: managerId,
+                userRole: 'manager',
+                branchId: branchId
+            });
+        } catch (notifErr) {
+            console.error('Notification (Manager) Error:', notifErr);
+        }
+
+        res.status(201).json({ success: true, message: 'Member registered successfully', data: savedMember, pdfUrl });
 
     } catch (error) {
         console.error('Register Member Error:', error);
@@ -306,7 +334,33 @@ const registerMember = async (req, res) => {
             console.error('[Sync] Failed:', syncError);
         }
 
-        res.status(201).json({ success: true, message: 'Member registered successfully', data: savedMember });
+        // Generate PDF
+        let pdfUrl = '';
+        try {
+            pdfUrl = await generateMemberPDF(savedMember);
+            savedMember.pdfUrl = pdfUrl;
+            await savedMember.save();
+        } catch (pdfErr) {
+            console.error('Member PDF (Manager Legacy) Generation Error:', pdfErr);
+        }
+
+        // Create notification
+        try {
+            await createAndSendNotification({
+                title: `Member Registered: ${savedMember.name}`,
+                body: `Registration completed successfully for ${savedMember.name}. PDF details are available for download.`,
+                date: new Date(),
+                attachment: pdfUrl,
+                memberId: savedMember._id,
+                userId: managerId,
+                userRole: 'manager',
+                branchId: branchId
+            });
+        } catch (notifErr) {
+            console.error('Notification (Manager Legacy) Error:', notifErr);
+        }
+
+        res.status(201).json({ success: true, message: 'Member registered successfully', data: savedMember, pdfUrl });
 
     } catch (error) {
         console.error('Register Member Error:', error);
