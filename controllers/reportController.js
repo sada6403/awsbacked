@@ -807,6 +807,7 @@ const getDashboardStats = async (req, res) => {
                 totalMembers: totalMembers,
                 extraMembersCount,
                 recentExtraMembers,
+                recentManagerMembers: isManager ? recentExtraMembers : [],
                 totalTransactions: totalTransactionsCount,
                 transactions,
                 notifications,
