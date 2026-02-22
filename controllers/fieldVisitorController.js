@@ -261,9 +261,6 @@ const registerFieldVisitor = async (req, res, next) => {
 const getFieldVisitors = async (req, res) => {
     try {
         const branchId = req.user?.branchId || 'default-branch';
-        const fieldVisitors = await FieldVisitor.find({ branchId })
-            .sort({ name: 1 })
-            .lean();
 
         // Check if pagination is requested via query params
         const pageNumber = req.query.pageNumber;
