@@ -29,21 +29,32 @@ async function generateMemberCode(branchId, userRole, userData) {
     }
 
     const prefix = `FA${branchCode}`;
-    const lastMember = await ExtraMember.findOne({
-        memberCode: { $regex: `^${prefix}\\d+$` }
-    })
-        .sort({ memberCode: -1 })
-        .collation({ locale: "en", numericOrdering: true });
+    const [lastExtra, lastCentral] = await Promise.all([
+        ExtraMember.findOne({
+            memberCode: { $regex: `^${prefix}\\d+$` }
+        })
+            .sort({ memberCode: -1 })
+            .collation({ locale: "en", numericOrdering: true }),
+        Member.findOne({
+            memberCode: { $regex: `^${prefix}\\d+$` }
+        })
+            .sort({ memberCode: -1 })
+            .collation({ locale: "en", numericOrdering: true })
+    ]);
 
-    let sequence = 1;
-    if (lastMember && lastMember.memberCode) {
-        const lastSeqStr = lastMember.memberCode.replace(prefix, '');
-        const lastSeq = parseInt(lastSeqStr, 10);
-        if (!isNaN(lastSeq)) {
-            sequence = lastSeq + 1;
-        }
+    let maxSeq = 0;
+
+    if (lastExtra && lastExtra.memberCode) {
+        const seq = parseInt(lastExtra.memberCode.replace(prefix, ''), 10);
+        if (!isNaN(seq)) maxSeq = Math.max(maxSeq, seq);
     }
 
+    if (lastCentral && lastCentral.memberCode) {
+        const seq = parseInt(lastCentral.memberCode.replace(prefix, ''), 10);
+        if (!isNaN(seq)) maxSeq = Math.max(maxSeq, seq);
+    }
+
+    const sequence = maxSeq + 1;
     return `${prefix}${sequence.toString().padStart(3, '0')}`;
 }
 

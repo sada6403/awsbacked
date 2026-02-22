@@ -3,6 +3,7 @@ const smsService = require('../services/smsService');
 const emailService = require('../services/emailService');
 const ExtraMember = require('../models/ExtraMember');
 const BranchManager = require('../models/BranchManager');
+const { generateMemberCode } = require('../utils/memberHelper');
 
 // @desc    Send OTP for Member Registration
 // @route   POST /api/managers-members/send-otp
@@ -159,42 +160,10 @@ const verifyOtpsAndRegister = async (req, res) => {
             });
         }
 
-        // --- Generate Custom Member ID (Logic mirrored from memberController) ---
-        let generatedMemberCode;
-        let branchCode = 'XX'; // Default
-
-        // 1. Get Branch Code from Manager's Branch Name
-        const branchNameStr = req.user.branchName || '';
-
-        // Map branch name to 2-letter code
-        if (branchNameStr) {
-            const nameUpper = branchNameStr.toUpperCase();
-            if (nameUpper.includes('KALMUNAI')) branchCode = 'KA';
-            else if (nameUpper.includes('TRINCO')) branchCode = 'TR';
-            else if (nameUpper.includes('KONDAVIL')) branchCode = 'JK'; // Jaffna (Kondavil)
-            else if (nameUpper.includes('SAVAGACHERI') || nameUpper.includes('CHAVAKACHCHERI')) branchCode = 'JS'; // Jaffna (Savagacheri)
-            else branchCode = nameUpper.substring(0, 2);
-        }
-
-        // 2. Find last member code for this branch prefix to determine sequence
-        const prefix = `FA${branchCode}`;
-        const lastMember = await ExtraMember.findOne({
-            memberCode: { $regex: `^${prefix}\\d+$` }
-        })
-            .sort({ memberCode: -1 })
-            .collation({ locale: "en", numericOrdering: true });
-
-        let sequence = 1;
-        if (lastMember && lastMember.memberCode) {
-            const lastSeqStr = lastMember.memberCode.replace(prefix, '');
-            const lastSeq = parseInt(lastSeqStr, 10);
-            if (!isNaN(lastSeq)) {
-                sequence = lastSeq + 1;
-            }
-        }
-
-        generatedMemberCode = `${prefix}${sequence.toString().padStart(3, '0')}`;
-        // -----------------------------------------------------------------------
+        // --- Generate Custom Member ID ---
+        const branchId = req.user.branchId || 'default-branch';
+        const generatedMemberCode = await generateMemberCode(branchId, req.user.role, req.user);
+        // ---------------------------------
 
         const newMember = new ExtraMember({
             name,
@@ -289,42 +258,10 @@ const registerMember = async (req, res) => {
             });
         }
 
-        // --- Generate Custom Member ID (Logic mirrored from memberController) ---
-        let generatedMemberCode;
-        let branchCode = 'XX'; // Default
-
-        // 1. Get Branch Code from Manager's Branch Name
-        const branchNameStr = req.user.branchName || '';
-
-        // Map branch name to 2-letter code
-        if (branchNameStr) {
-            const nameUpper = branchNameStr.toUpperCase();
-            if (nameUpper.includes('KALMUNAI')) branchCode = 'KA';
-            else if (nameUpper.includes('TRINCO')) branchCode = 'TR';
-            else if (nameUpper.includes('KONDAVIL')) branchCode = 'JK'; // Jaffna (Kondavil)
-            else if (nameUpper.includes('SAVAGACHERI') || nameUpper.includes('CHAVAKACHCHERI')) branchCode = 'JS'; // Jaffna (Savagacheri)
-            else branchCode = nameUpper.substring(0, 2);
-        }
-
-        // 2. Find last member code for this branch prefix to determine sequence
-        const prefix = `FA${branchCode}`;
-        const lastMember = await ExtraMember.findOne({
-            memberCode: { $regex: `^${prefix}\\d+$` }
-        })
-            .sort({ memberCode: -1 })
-            .collation({ locale: "en", numericOrdering: true });
-
-        let sequence = 1;
-        if (lastMember && lastMember.memberCode) {
-            const lastSeqStr = lastMember.memberCode.replace(prefix, '');
-            const lastSeq = parseInt(lastSeqStr, 10);
-            if (!isNaN(lastSeq)) {
-                sequence = lastSeq + 1;
-            }
-        }
-
-        generatedMemberCode = `${prefix}${sequence.toString().padStart(3, '0')}`;
-        // -----------------------------------------------------------------------
+        // --- Generate Custom Member ID ---
+        const branchId = req.user.branchId || 'default-branch';
+        const generatedMemberCode = await generateMemberCode(branchId, req.user.role, req.user);
+        // ---------------------------------
 
         const newMember = new ExtraMember({
             name,

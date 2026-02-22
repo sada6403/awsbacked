@@ -4,6 +4,7 @@ const FieldVisitor = require('../models/FieldVisitor');
 const BranchManager = require('../models/BranchManager');
 const mongoose = require('mongoose');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
+const { generateMemberCode } = require('../utils/memberHelper');
 
 // @desc    Register a member
 // @route   POST /api/members
@@ -40,43 +41,7 @@ const registerMember = async (req, res, next) => {
         // Generate Custom Member ID
         let generatedMemberCode = memberCode;
         if (!generatedMemberCode) {
-            let branchCode = 'XX';
-            let branchNameStr = '';
-
-            if (req.user.role === 'manager') {
-                branchNameStr = req.user.branchName;
-            } else {
-                const branchManager = await BranchManager.findOne({ branchId });
-                if (branchManager) {
-                    branchNameStr = branchManager.branchName;
-                }
-            }
-
-            if (branchNameStr) {
-                const nameUpper = branchNameStr.toUpperCase();
-                if (nameUpper.includes('KALMUNAI')) branchCode = 'KA';
-                else if (nameUpper.includes('TRINCO')) branchCode = 'TR';
-                else if (nameUpper.includes('KONDAVIL')) branchCode = 'JK';
-                else if (nameUpper.includes('SAVAGACHERI') || nameUpper.includes('CHAVAKACHCHERI')) branchCode = 'JS';
-                else branchCode = nameUpper.substring(0, 2);
-            }
-
-            const prefix = `FA${branchCode}`;
-            const lastMember = await ExtraMember.findOne({
-                memberCode: { $regex: `^${prefix}\\d+$` }
-            })
-                .sort({ memberCode: -1 })
-                .collation({ locale: "en", numericOrdering: true });
-
-            let sequence = 1;
-            if (lastMember && lastMember.memberCode) {
-                const lastSeqStr = lastMember.memberCode.replace(prefix, '');
-                const lastSeq = parseInt(lastSeqStr, 10);
-                if (!isNaN(lastSeq)) {
-                    sequence = lastSeq + 1;
-                }
-            }
-            generatedMemberCode = `${prefix}${sequence.toString().padStart(3, '0')}`;
+            generatedMemberCode = await generateMemberCode(branchId, req.user.role, req.user);
         }
 
         let newMember;
