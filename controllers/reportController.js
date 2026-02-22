@@ -130,6 +130,8 @@ const getManagerDashboard = async (req, res) => {
                 name: fv.name || fv.fullName,
                 userId: fv.userId,
                 phone: fv.phone,
+                email: fv.email,
+                address: fv.postalAddress || fv.permanentAddress || 'N/A',
                 totalAmount: contrib.totalAmount,
                 amount: contrib.totalAmount, // Added 'amount' key for Flutter compatibility (Manager Dashboard)
                 transactionCount: contrib.transactionCount,
