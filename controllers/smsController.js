@@ -33,8 +33,8 @@ exports.generateOtp = async (req, res) => {
             console.error('SMS Send Failed:', smsResult);
             return res.status(500).json({
                 success: false,
-                message: 'Failed to send SMS upstream',
-                details: smsResult // Optional: expose details for debugging
+                message: `Failed to send SMS: ${smsResult.error || 'Unknown Error'}`,
+                details: smsResult
             });
         }
 

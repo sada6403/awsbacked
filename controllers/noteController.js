@@ -1,4 +1,5 @@
 const Note = require('../models/Note');
+const translationService = require('../services/translationService');
 
 // @desc    Get all notes for logged-in field visitor
 // @route   GET /api/notes
@@ -31,17 +32,21 @@ const createNote = async (req, res) => {
             return res.status(401).json({ success: false, message: 'Not authorized' });
         }
 
-        const { title, noteText, category } = req.body;
+        let { title, noteText, category } = req.body;
 
         if (!title || !noteText) {
             return res.status(400).json({ success: false, message: 'Title and note text are required' });
         }
 
+        // Translate to English before saving
+        title = await translationService.translateToEnglish(title.trim());
+        noteText = await translationService.translateToEnglish(noteText.trim());
+
         const note = new Note({
             fieldVisitorId,
             branchId: req.user.branchId,
-            title: title.trim(),
-            noteText: noteText.trim(),
+            title,
+            noteText,
             category: category || 'observation'
         });
 
@@ -70,8 +75,8 @@ const updateNote = async (req, res) => {
 
         const { title, noteText, category } = req.body;
 
-        if (title) note.title = title.trim();
-        if (noteText) note.noteText = noteText.trim();
+        if (title) note.title = await translationService.translateToEnglish(title.trim());
+        if (noteText) note.noteText = await translationService.translateToEnglish(noteText.trim());
         if (category) note.category = category;
         note.updatedAt = Date.now();
 

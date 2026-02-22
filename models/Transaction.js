@@ -3,8 +3,9 @@ const mongoose = require('mongoose');
 const TransactionSchema = new mongoose.Schema({
     billNumber: { type: String, required: true, unique: true },
     type: { type: String, enum: ['buy', 'sell'], required: true },
-    memberId: { type: mongoose.Schema.Types.ObjectId, ref: 'Member', required: true, index: true },
-    fieldVisitorId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldVisitor', required: true, index: true },
+    memberId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+    memberModel: { type: String, required: true, enum: ['Member', 'ExtraMember', 'ManagersMember'], default: 'Member' },
+    fieldVisitorId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldVisitor', index: true },
     productName: { type: String, required: true }, // Store name snapshot
     quantity: { type: Number, required: true },
     unitType: { type: String, required: true },

@@ -1,4 +1,7 @@
 const Notification = require('../models/Notification');
+const FieldVisitor = require('../models/FieldVisitor');
+const BranchManager = require('../models/BranchManager');
+const { sendManyAndPush } = require('../utils/notificationHelper');
 
 // @desc    Get notifications for current user (manager or field visitor)
 // @route   GET /api/notifications
@@ -23,8 +26,6 @@ const getMyNotifications = async (req, res) => {
     }
 };
 
-const FieldVisitor = require('../models/FieldVisitor');
-
 // @desc    Create a notification
 // @route   POST /api/notifications
 // @access  Private
@@ -45,7 +46,7 @@ const createNotification = async (req, res) => {
         const notificationsToCreate = [];
 
         // Manager sending to Field Visitors
-        if (userRole === 'manager') {
+        if (userRole === 'manager' || userRole === 'branch_manager') {
             if (sendToAll) {
                 // Find all field visitors in this branch
                 const visitors = await FieldVisitor.find({ branchId }).select('_id');
@@ -60,7 +61,7 @@ const createNotification = async (req, res) => {
                         userRole: 'field_visitor', // Role of recipient
                         fieldVisitorId: visitor._id,
                         managerId: userId, // Sender
-                        branchId, // Add branchId
+                        branchId,
                         isRead: false
                     });
                 }
@@ -75,11 +76,11 @@ const createNotification = async (req, res) => {
                     userRole: 'field_visitor',
                     fieldVisitorId: recipientId,
                     managerId: userId, // Sender
-                    branchId, // Add branchId
+                    branchId,
                     isRead: false
                 });
             } else {
-                // Fallback: create for self (Manager) - useful for testing or personal notes
+                // Fallback: create for self (Manager)
                 notificationsToCreate.push({
                     title,
                     body,
@@ -87,12 +88,12 @@ const createNotification = async (req, res) => {
                     userId,
                     userRole,
                     managerId: userId,
-                    branchId, // Add branchId
+                    branchId,
                     isRead: false
                 });
             }
         } else {
-            // Field Visitor creating notification (typically for self or system)
+            // Field Visitor creating notification
             notificationsToCreate.push({
                 title,
                 body,
@@ -100,13 +101,12 @@ const createNotification = async (req, res) => {
                 userId,
                 userRole,
                 fieldVisitorId: userId,
-                branchId, // Add branchId
+                branchId,
                 isRead: false
             });
 
-            // NEW: Automatically notify the Branch Manager(s)
+            // Automatically notify the Branch Manager(s)
             try {
-                const BranchManager = require('../models/BranchManager');
                 const managers = await BranchManager.find({ branchId });
                 console.log(`[createNotification] Found ${managers.length} managers for branch ${branchId}`);
 
@@ -128,8 +128,8 @@ const createNotification = async (req, res) => {
         }
 
         if (notificationsToCreate.length > 0) {
-            const savedNotifications = await Notification.insertMany(notificationsToCreate);
-            console.log('[createNotification] Created:', savedNotifications.length, 'notifications');
+            const savedNotifications = await sendManyAndPush(notificationsToCreate);
+            console.log('[createNotification] Created and triggered:', savedNotifications.length, 'notifications');
             res.status(201).json({ success: true, count: savedNotifications.length, data: savedNotifications });
         } else {
             res.status(200).json({ success: true, message: 'No recipients found', data: [] });
@@ -141,4 +141,31 @@ const createNotification = async (req, res) => {
     }
 };
 
-module.exports = { getMyNotifications, createNotification };
+// @desc    Mark all unread notifications as read for current user
+// @route   PUT /api/notifications/mark-read
+// @access  Private
+const markNotificationsAsRead = async (req, res) => {
+    try {
+        const userId = req.user?._id;
+        if (!userId) {
+            return res.status(401).json({ success: false, message: 'Not authorized' });
+        }
+
+        const result = await Notification.updateMany(
+            { userId, isRead: false },
+            { $set: { isRead: true } }
+        );
+
+        res.json({
+            success: true,
+            message: 'Notifications marked as read',
+            modifiedCount: result.modifiedCount
+        });
+    } catch (error) {
+        console.error('[markNotificationsAsRead] Error:', error.message);
+        res.status(500).json({ success: false, message: 'Failed to mark notifications as read', error: error.message });
+    }
+};
+
+module.exports = { getMyNotifications, createNotification, markNotificationsAsRead };
+

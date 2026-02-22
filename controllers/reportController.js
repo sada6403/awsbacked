@@ -3,6 +3,8 @@ const Member = require('../models/Member');
 const FieldVisitor = require('../models/FieldVisitor');
 const Notification = require('../models/Notification');
 const Note = require('../models/Note');
+const ManagersMember = require('../models/ManagersMember');
+const ExtraMember = require('../models/ExtraMember');
 const mongoose = require('mongoose');
 
 const branchFilter = (user) => ({ branchId: user.branchId || 'default-branch' });
@@ -31,18 +33,78 @@ const getManagerDashboard = async (req, res) => {
             }
         ]);
 
-        // Member counts per field visitor
-        const memberCounts = await Member.aggregate([
-            { $match: { branchId } },
-            { $group: { _id: '$fieldVisitorId', memberCount: { $sum: 1 } } }
+        // Member counts per field visitor (using ExtraMember)
+        const visitors = await FieldVisitor.find({ branchId }).select('_id');
+        const visitorIds = visitors.map(v => v._id);
+        // Include branch manager themselves
+        visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
+
+        console.log('DEBUG: Aggregating members for dashboard... Visitors:', visitorIds.length);
+
+        // Use Promise.all to fetch counts from both collections
+        const [extraMemberCounts, centralMemberCounts] = await Promise.all([
+            ExtraMember.aggregate([
+                {
+                    $match: {
+                        collectedBy: { $in: visitorIds },
+                        memberCode: { $exists: true, $ne: null, $ne: '' } // Confirmed Members
+                    }
+                },
+                { $group: { _id: '$collectedBy', memberCount: { $sum: 1 } } }
+            ]),
+            Member.aggregate([
+                {
+                    $match: {
+                        fieldVisitorId: { $in: visitorIds }
+                    }
+                },
+                { $group: { _id: '$fieldVisitorId', memberCount: { $sum: 1 } } }
+            ])
+        ]);
+
+        // Merge counts (Member records are the primary source now, but ExtraMember might still have some)
+        // Since we upsert from ExtraMember to Member, there might be duplicates if we count both.
+        // Actually, for scratch registrations, they are ONLY in Member.
+        // For leads-turned-members, they are in BOTH, but with same data (mobile).
+        // To be safe, let's just count from Member collection for "Confirmed Members" and ExtraMember for "Leads".
+        // Is every registered member in 'Member'? Yes,upserted.
+        const memberCounts = centralMemberCounts;
+
+        const leadCounts = await ExtraMember.aggregate([
+            {
+                $match: {
+                    collectedBy: { $in: visitorIds },
+                    $or: [
+                        { memberCode: { $exists: false } },
+                        { memberCode: null },
+                        { memberCode: '' }
+                    ]
+                }
+            },
+            { $group: { _id: '$collectedBy', leadCount: { $sum: 1 } } }
+        ]);
+
+        // Aggregate Manager's own members (from ManagersMember / extramember collection)
+        const managerMemberCounts = await ManagersMember.aggregate([
+            { $match: { addedBy: { $in: visitorIds } } },
+            { $group: { _id: '$addedBy', count: { $sum: 1 } } }
         ]);
 
         const contributionMap = new Map(contributions.map(c => [c._id?.toString(), c]));
         const memberMap = new Map(memberCounts.map(m => [m._id?.toString(), m.memberCount]));
+        const leadMap = new Map(leadCounts.map(l => [l._id?.toString(), l.leadCount]));
+        const managerMap = new Map(managerMemberCounts.map(m => [m._id?.toString(), m.count]));
 
         const fieldVisitorStats = fieldVisitors.map(fv => {
             const key = fv._id.toString();
             const contrib = contributionMap.get(key) || { totalAmount: 0, transactionCount: 0 };
+
+            // For Manager (req.user), add counts from ManagersMember
+            let totalMembers = memberMap.get(key) || 0;
+            if (key === req.user._id.toString()) {
+                totalMembers += (managerMap.get(key) || 0);
+            }
+
             return {
                 _id: fv._id,
                 name: fv.name || fv.fullName,
@@ -50,7 +112,8 @@ const getManagerDashboard = async (req, res) => {
                 phone: fv.phone,
                 totalAmount: contrib.totalAmount,
                 transactionCount: contrib.transactionCount,
-                memberCount: memberMap.get(key) || 0
+                memberCount: totalMembers,
+                leadCount: leadMap.get(key) || 0
             };
         }).sort((a, b) => b.totalAmount - a.totalAmount);
 
@@ -98,6 +161,17 @@ const getManagerDashboard = async (req, res) => {
             }
         });
 
+        // Fetch notifications for the manager
+        const notifications = await Notification.find({ userId: req.user._id })
+            .sort({ date: -1 })
+            .limit(10)
+            .lean();
+
+        const unreadNotificationsCount = await Notification.countDocuments({
+            userId: req.user._id,
+            isRead: false
+        });
+
         res.json({
             success: true,
             data: {
@@ -106,6 +180,8 @@ const getManagerDashboard = async (req, res) => {
                 totalTransactions,
                 totalMembers,
                 fieldVisitors: fieldVisitorStats,
+                notifications, // Include recent notifications
+                unreadNotificationsCount, // Include total unread count
                 pie,
                 barChart
             }
@@ -308,16 +384,26 @@ const getFieldVisitorDashboard = async (req, res) => {
             }))
         };
 
+        // Get exact member count for Promotion Journey
+        const totalMembers = await Member.countDocuments({ fieldVisitorId });
+
+        const unreadNotificationsCount = await Notification.countDocuments({
+            userId: fieldVisitorId,
+            isRead: false
+        });
+
         res.json({
             success: true,
             data: {
                 branchId,
                 totals: fvTotals,
+                totalMembers, // Added for Promotion Journey
                 buyPieChart,
                 sellPieChart,
                 branchPie,
                 transactions,
                 notifications,
+                unreadNotificationsCount,
                 notes
             }
         });
@@ -381,7 +467,7 @@ const getDashboardStats = async (req, res) => {
         const isManager = req.user?.role === 'manager';
         let userId = req.user?._id;
 
-        if (userId && !isManager) {
+        if (userId) {
             userId = new mongoose.Types.ObjectId(userId);
         }
 
@@ -424,12 +510,29 @@ const getDashboardStats = async (req, res) => {
         });
 
         // Get total members count
-        const memberFilter = { branchId };
-        if (!isManager) {
-            memberFilter.fieldVisitorId = userId;
+        let totalMembers = 0;
+        if (isManager) {
+            // Manager sees counts from ALL their FVs
+            const FieldVisitor = require('../models/FieldVisitor');
+            const visitors = await FieldVisitor.find({ branchId }).select('_id');
+            const visitorIds = visitors.map(v => v._id);
+            visitorIds.push(userId); // Manager's own
+
+            totalMembers = await Member.countDocuments({
+                fieldVisitorId: { $in: visitorIds }
+            });
+        } else {
+            // Field Visitor sees only their own members from central collection
+            totalMembers = await Member.countDocuments({
+                fieldVisitorId: userId
+            });
         }
 
-        const totalMembers = await Member.countDocuments(memberFilter);
+        let extraMembersCount = totalMembers;
+        let recentExtraMembers = await ExtraMember.find(isManager ? { collectedBy: userId } : { collectedBy: userId })
+            .sort({ collectedAt: -1 })
+            .limit(10)
+            .lean();
 
         // Get recent transactions
         const recentTxFilter = { branchId };
@@ -442,12 +545,18 @@ const getDashboardStats = async (req, res) => {
             .populate('memberId', 'fullName name mobile')
             .lean();
 
-        // Get notifications
-        const notificationFilter = isManager ? { branchId } : { fieldVisitorId: userId };
+        // Get notifications (personal to the user)
+        const notificationFilter = { userId: req.user._id };
         const notifications = await Notification.find(notificationFilter)
             .sort({ date: -1 })
             .limit(10)
             .lean();
+
+        // Get total unread count (User requested perfect count)
+        const unreadNotificationsCount = await Notification.countDocuments({
+            ...notificationFilter,
+            isRead: false
+        });
 
         // Stats for pie charts (by quantity)
         // If not manager, strictly filter pie data to this user (hide 'Others')
@@ -545,13 +654,38 @@ const getDashboardStats = async (req, res) => {
                 }
             ]);
 
-            const fvMemberCounts = await Member.aggregate([
-                { $match: { branchId } },
-                { $group: { _id: '$fieldVisitorId', count: { $sum: 1 } } }
+            const [fvMemberCounts, fvExtraCounts] = await Promise.all([
+                Member.aggregate([
+                    { $match: { branchId } },
+                    { $group: { _id: '$fieldVisitorId', count: { $sum: 1 } } }
+                ]),
+                ExtraMember.aggregate([
+                    {
+                        $match: {
+                            branchId,
+                            $or: [
+                                { memberCode: { $exists: false } },
+                                { memberCode: null },
+                                { memberCode: '' }
+                            ]
+                        }
+                    },
+                    { $group: { _id: '$collectedBy', count: { $sum: 1 } } }
+                ])
             ]);
 
             const statsMap = new Map(fvStats.map(s => [s._id?.toString(), s]));
-            const countMap = new Map(fvMemberCounts.map(c => [c._id?.toString(), c.count]));
+            const memberCountMap = new Map();
+            const leadCountMap = new Map();
+
+            fvMemberCounts.forEach(c => {
+                const id = c._id?.toString();
+                if (id) memberCountMap.set(id, c.count);
+            });
+            fvExtraCounts.forEach(c => {
+                const id = c._id?.toString();
+                if (id) leadCountMap.set(id, c.count);
+            });
 
             fieldVisitors = fvs.map(fv => {
                 const s = statsMap.get(fv._id.toString()) || { totalAmount: 0, transactionCount: 0 };
@@ -567,7 +701,8 @@ const getDashboardStats = async (req, res) => {
                     amount: s.totalAmount,
                     totalAmount: s.totalAmount,
                     transactionCount: s.transactionCount,
-                    memberCount: countMap.get(fv._id.toString()) || 0
+                    memberCount: memberCountMap.get(fv._id.toString()) || 0,
+                    leadCount: leadCountMap.get(fv._id.toString()) || 0
                 };
             });
         }
@@ -600,11 +735,39 @@ const getDashboardStats = async (req, res) => {
                     others: sellOthers,
                     total: sellThisUser + sellOthers
                 },
-                totalMembers,
+                // For both managers and field visitors, we now count from ExtraMember
+                totalMembers: totalMembers,
+                extraMembersCount,
+                recentExtraMembers,
                 totalTransactions: totalTransactionsCount,
                 transactions,
                 notifications,
-                fieldVisitors // Only populated for managers
+                unreadNotificationsCount,
+                fieldVisitors, // Only populated for managers
+
+                // Monthly Leads Count
+                monthlyLeads: await ExtraMember.countDocuments({
+                    collectedBy: userId,
+                    collectedAt: { $gte: startOfMonth, $lte: endOfMonth }
+                }),
+
+                // Total Lifetime Leads Count
+                totalLeads: await ExtraMember.countDocuments({
+                    collectedBy: userId
+                }),
+
+                // Manager's own members (from both legacy ManagersMember and current ExtraMember/Member collections)
+                managersMemberCount: (await ManagersMember.countDocuments({ addedBy: userId })) +
+                    (await ExtraMember.countDocuments({ collectedBy: userId, memberCode: { $ne: null, $ne: '' } })),
+
+                // Annual Leads Count
+                annualLeads: await ExtraMember.countDocuments({
+                    collectedBy: userId,
+                    collectedAt: {
+                        $gte: new Date(new Date().getFullYear(), 0, 1),
+                        $lte: new Date(new Date().getFullYear(), 11, 31, 23, 59, 59)
+                    }
+                })
             }
         });
     } catch (error) {

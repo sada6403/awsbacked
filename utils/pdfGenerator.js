@@ -2,7 +2,7 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 
-const generateBillPDF = (transaction, member, fieldVisitor) => {
+const generateBillPDF = (transaction, member, officer) => {
     return new Promise((resolve, reject) => {
         try {
             const doc = new PDFDocument({ margin: 40, size: 'A4' });
@@ -44,7 +44,11 @@ const generateBillPDF = (transaction, member, fieldVisitor) => {
             doc.fontSize(10).font('Helvetica')
                 .text('Kilinochi, Sri Lanka', leftX, headerY + 25)
                 .text('Phone: 024 433 5099', leftX, headerY + 40)
+<<<<<<< HEAD
                 .text('Email: nffplantation.offficial.it@gmil.com', leftX, headerY + 55);
+=======
+                .text('Email: nfplantation.official.it@gmail.com', leftX, headerY + 55);
+>>>>>>> a527a77 (Update backend with company transfer logic and error handling)
 
             // Title (Right Aligned)
             doc.fillColor(primaryColor).fontSize(28).font('Helvetica-Bold')
@@ -73,7 +77,10 @@ const generateBillPDF = (transaction, member, fieldVisitor) => {
             // Headers Text
             doc.fillColor(white).fontSize(10).font('Helvetica-Bold');
             doc.text(type === 'BUY' ? 'VENDOR (MEMBER)' : 'CUSTOMER (MEMBER)', col1 + 5, colTop + 5);
-            doc.text('FIELD OFFICER', col2 + 5, colTop + 5);
+
+            const officerTitle = (officer && officer.role === 'Manager') ? 'BRANCH MANAGER' : 'FIELD OFFICER';
+            doc.text(officerTitle, col2 + 5, colTop + 5);
+
             doc.text('TRANSACTION DETAILS', col3 + 5, colTop + 5);
 
             // Content
@@ -81,19 +88,31 @@ const generateBillPDF = (transaction, member, fieldVisitor) => {
             doc.fillColor(black).fontSize(9).font('Helvetica');
 
             // Col 1: Member
+<<<<<<< HEAD
             doc.text(`Name: ${member.name || 'Unknown'}`, col1, contentTop);
             doc.text(`Phone: ${member.mobile || member.phone || 'N/A'}`, col1, contentTop + 15);
             doc.text(`Addr: ${member.address || member.postal_address || 'N/A'}`, col1, contentTop + 30, { width: colWidth - 5 });
+=======
+            doc.text(`Name: ${member.name || member.fullName || 'Unknown'}`, col1, contentTop);
+            doc.text(`Phone: ${member.mobile || 'N/A'}`, col1, contentTop + 15);
+            doc.text(`Addr: ${member.address || 'N/A'}`, col1, contentTop + 30, { width: colWidth - 5 });
+>>>>>>> a527a77 (Update backend with company transfer logic and error handling)
 
-            // Col 2: Field Visitor
-            doc.text(`Name: ${fieldVisitor.name || 'Unknown'}`, col2, contentTop);
-            doc.text(`Code: ${fieldVisitor.userId || 'N/A'}`, col2, contentTop + 15);
-            doc.text(`Phone: ${fieldVisitor.phone || 'N/A'}`, col2, contentTop + 30);
+            // Col 2: Officer (FV or Manager)
+            const officerName = officer ? (officer.name || officer.fullName || 'Unknown') : 'Unknown';
+            const officerCode = officer ? (officer.userId || officer.code || 'N/A') : 'N/A'; // code sometimes used for fv? No, schema says userId.
+            const officerPhone = officer ? (officer.phone || 'N/A') : 'N/A';
+
+            doc.text(`Name: ${officerName}`, col2, contentTop);
+            doc.text(`Code: ${officerCode}`, col2, contentTop + 15);
+            doc.text(`Phone: ${officerPhone}`, col2, contentTop + 30);
 
             // Col 3: Details
             doc.text(`Pay Mode: Cash`, col3, contentTop);
             doc.text(`Status: Completed`, col3, contentTop + 15);
-            doc.text(`Branch: ${fieldVisitor.area || 'General'}`, col3, contentTop + 30);
+            // officer.area is for FV. Manager might have branchName.
+            const branchName = officer ? (officer.area || officer.branchName || 'General') : 'General';
+            doc.text(`Branch: ${branchName}`, col3, contentTop + 30);
 
             doc.moveDown(4);
 

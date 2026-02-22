@@ -2,6 +2,8 @@ const sendEmail = require('../utils/emailService');
 const FieldVisitor = require('../models/FieldVisitor');
 const Otp = require('../models/Otp');
 const Notification = require('../models/Notification'); // Moved to top
+const Member = require('../models/Member');
+const ExtraMember = require('../models/ExtraMember');
 
 // @desc    Send verification OTP to email
 // @route   POST /api/fieldvisitors/send-otp
@@ -169,7 +171,8 @@ const registerFieldVisitor = async (req, res, next) => {
         // CREATE NOTIFICATION FOR MANAGER
         try {
             if (req.user && req.user._id) {
-                await Notification.create({
+                const { createAndSendNotification } = require('../utils/notificationHelper');
+                await createAndSendNotification({
                     title: `Field Visitor Registered: ${name}`,
                     body: `New Field Visitor ${name} (${generatedUserId}) has been registered in ${area}.`,
                     date: new Date(),
@@ -177,8 +180,7 @@ const registerFieldVisitor = async (req, res, next) => {
                     userRole: req.user.role,
                     managerId: req.user._id,
                     fieldVisitorId: savedFieldVisitor._id, // Store ID for Deep Linking
-                    branchId: req.user.branchId,
-                    isRead: false
+                    branchId: req.user.branchId
                 });
             }
         } catch (notifyErr) {
@@ -263,6 +265,7 @@ const getFieldVisitors = async (req, res) => {
             .sort({ name: 1 })
             .lean();
 
+<<<<<<< HEAD
         res.json({
             success: true,
             fieldVisitors,
@@ -272,6 +275,37 @@ const getFieldVisitors = async (req, res) => {
         console.error('Fetch Field Visitors Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
     }
+=======
+    // Check if pagination is requested via query params
+    const pageNumber = req.query.pageNumber;
+    const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null;
+
+    const count = await FieldVisitor.countDocuments({ branchId });
+
+    let query = FieldVisitor.find({ branchId });
+
+    const attachCounts = async (visitors) => {
+        return Promise.all(visitors.map(async (v) => {
+            const membersCount = await Member.countDocuments({ fieldVisitorId: v._id });
+            const leadsCount = await ExtraMember.countDocuments({ collectedBy: v._id });
+            return { ...v, membersCount, leadsCount };
+        }));
+    };
+
+    // Only apply pagination if explicitly requested
+    if (pageNumber && pageSize) {
+        const page = Number(pageNumber);
+        query = query.limit(pageSize).skip(pageSize * (page - 1));
+        let fieldVisitors = await query.lean();
+        fieldVisitors = await attachCounts(fieldVisitors);
+        return res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize), total: count });
+    }
+
+    // Otherwise, return all field visitors (no limit)
+    let fieldVisitors = await query.lean();
+    fieldVisitors = await attachCounts(fieldVisitors);
+    res.json({ fieldVisitors, total: count });
+>>>>>>> a527a77 (Update backend with company transfer logic and error handling)
 };
 
 // Notification require moved to top
@@ -328,4 +362,33 @@ const sendTestEmail = async (req, res) => {
     }
 };
 
-module.exports = { registerFieldVisitor, getFieldVisitors, getFieldVisitorById, sendVerificationEmail, sendTestEmail };
+// @desc    Update field visitor details (Self or Manager)
+// @route   PUT /api/fieldvisitors/:id
+// @access  Private
+const updateFieldVisitor = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+
+        // Prevent updating sensitive fields directly here if needed (e.g., password, balance)
+        delete updates.password;
+        delete updates.walletBalance;
+        delete updates.userId;
+
+        const fieldVisitor = await FieldVisitor.findByIdAndUpdate(id, updates, {
+            new: true,
+            runValidators: true
+        }).select('-password');
+
+        if (!fieldVisitor) {
+            return res.status(404).json({ success: false, message: 'Field Visitor not found' });
+        }
+
+        res.json({ success: true, data: fieldVisitor });
+    } catch (error) {
+        console.error('Update FV Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    }
+};
+
+module.exports = { registerFieldVisitor, getFieldVisitors, getFieldVisitorById, sendVerificationEmail, sendTestEmail, updateFieldVisitor };

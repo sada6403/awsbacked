@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { createTransaction, getTransactions, downloadBill } = require('../controllers/transactionController');
 const { protect, authorize } = require('../middleware/authMiddleware');
+const idempotency = require('../middleware/idempotencyMiddleware');
 
 router.route('/')
-    .post(protect, authorize('manager', 'field_visitor'), createTransaction)
+    .post(protect, authorize('manager', 'field_visitor'), idempotency, createTransaction)
     .get(protect, authorize('manager', 'field_visitor'), getTransactions);
 
 // Download bill and create notification

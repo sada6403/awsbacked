@@ -23,7 +23,7 @@ const BranchManagerSchema = new mongoose.Schema(
     branchName: {
       type: String,
       required: true,
-      enum: ['Kalmunai', 'Jaffna (Kondavil)', 'Jaffna (Savagacheri)', 'Trincomalee'],
+      enum: ['Kalmunai', 'Jaffna (Kondavil)', 'Jaffna (Savagacheri)', 'Trincomalee', 'Jaffna', 'Mannar', 'Ampara'],
     },
     branchId: {
       type: String,
@@ -49,6 +49,12 @@ const BranchManagerSchema = new mongoose.Schema(
       enum: ['active', 'inactive'],
       default: 'active',
     },
+    walletBalance: {
+      type: Number,
+      default: 0,
+    },
+    profileImage: { type: String }, // Base64 image string
+    fcmToken: { type: String, index: true },
     createdAt: {
       type: Date,
       default: Date.now,

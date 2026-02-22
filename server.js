@@ -3,16 +3,25 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const { initializeFCM } = require('./utils/pushNotification');
+
+// Initialize Firebase Admin
+initializeFCM();
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
+const extraMemberRoutes = require('./routes/extraMemberRoutes');
 const memberRoutes = require('./routes/memberRoutes');
 const fieldVisitorRoutes = require('./routes/fieldVisitorRoutes');
 const productRoutes = require('./routes/productRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const noteRoutes = require('./routes/noteRoutes');
+const walletRoutes = require('./routes/walletRoutes');
+const managersMemberRoutes = require('./routes/managersMemberRoutes');
+const draftRoutes = require('./routes/draftRoutes');
+const chatRoutes = require('./routes/chatRoutes');
 
 // Import error middleware
 const errorHandler = require('./middleware/errorMiddleware');
@@ -28,11 +37,13 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
-app.use(express.json()); // Parse JSON request bodies
+app.use(express.json({ limit: '10mb' })); // Increased limit for signature images
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Serve static files (PDF bills)
 const path = require('path');
 app.use('/bills', express.static(path.join(__dirname, 'public', 'bills')));
+app.use('/members', express.static(path.join(__dirname, 'public', 'members')));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -115,12 +126,17 @@ const Member = require('./models/Member');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/extra-members', extraMemberRoutes);
 app.use('/api/members', memberRoutes);
 app.use('/api/fieldvisitors', fieldVisitorRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/notes', noteRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/managers-members', managersMemberRoutes);
+app.use('/api/drafts', draftRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -241,10 +257,10 @@ app.post('/api/members', async (req, res) => {
 // Debug endpoint to list all users (for testing)
 app.get('/api/users', async (req, res) => {
     try {
-        const Manager = require('./models/Manager');
+        const BranchManager = require('./models/BranchManager');
         const FieldVisitor = require('./models/FieldVisitor');
 
-        const managers = await Manager.find().select('-password');
+        const managers = await BranchManager.find().select('-password');
         const fieldVisitors = await FieldVisitor.find().select('-password');
         const members = await Member.find();
 
@@ -253,9 +269,9 @@ app.get('/api/users', async (req, res) => {
             data: {
                 managers: managers.map(m => ({
                     _id: m._id,
-                    name: m.name,
+                    name: m.fullName,
                     email: m.email,
-                    code: m.code,
+                    code: m.userId,
                     role: 'manager'
                 })),
                 fieldVisitors: fieldVisitors.map(fv => ({

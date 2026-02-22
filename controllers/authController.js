@@ -40,6 +40,7 @@ const loginUser = async (req, res, next) => {
                 role: role,
                 branchId,
                 branchName: user.branchName || '', // Return branch name
+                profileImage: user.profileImage, // Return profile image
                 token: generateToken(user._id, role === 'field' ? 'field_visitor' : 'manager', branchId),
             };
 
@@ -88,6 +89,21 @@ const registerManager = async (req, res, next) => {
             });
         }
 
+<<<<<<< HEAD
+=======
+        // Auto-generate userId using smart branch code generation
+        const { generateUniqueBranchCode, getNextSequence } = require('../utils/branchCodeGenerator');
+
+        // Generate unique branch code from manager's name (2-4 letters with collision detection)
+        const branchCode = await generateUniqueBranchCode(fullName, 'manager');
+
+        // Get next sequence number for this branch code
+        const sequence = await getNextSequence(branchCode, 'BM');
+
+        // Generate userId: BM-{BranchCode}-{Sequence}
+        const userId = `BM-${branchCode}-${sequence}`;
+
+>>>>>>> a527a77 (Update backend with company transfer logic and error handling)
         // Create new manager instance
         const newManager = new BranchManager({
             fullName,
@@ -149,4 +165,86 @@ const registerManager = async (req, res, next) => {
     }
 };
 
-module.exports = { loginUser, registerManager };
+// @desc    Update manager details
+// @route   PUT /api/auth/manager/:id
+// @access  Private
+const updateManager = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+
+        // Prevent updating sensitive fields
+        delete updates.password;
+        delete updates.walletBalance;
+        delete updates.userId;
+        delete updates.branchId;
+
+        const manager = await BranchManager.findByIdAndUpdate(id, updates, {
+            new: true,
+            runValidators: true
+        }).select('-password');
+
+        if (!manager) {
+            return res.status(404).json({ success: false, message: 'Manager not found' });
+        }
+
+        res.json({ success: true, data: manager });
+    } catch (error) {
+        console.error('Update Manager Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Get manager details by ID
+// @route   GET /api/auth/manager/:id
+// @access  Private
+const getManagerById = async (req, res) => {
+    try {
+        const manager = await BranchManager.findById(req.params.id).select('-password');
+        if (manager) {
+            res.json({ success: true, data: manager });
+        } else {
+            res.status(404).json({ success: false, message: 'Manager not found' });
+        }
+    } catch (error) {
+        console.error('Get Manager Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Update FCM token
+// @route   POST /api/auth/fcm-token
+// @access  Private
+const updateFcmToken = async (req, res, next) => {
+    try {
+        const { fcmToken } = req.body;
+        const userId = req.user._id;
+        const role = req.user.role;
+
+        if (!fcmToken) {
+            res.status(400);
+            throw new Error('Please provide FCM token');
+        }
+
+        let user;
+        if (role === 'manager' || role === 'branch_manager') {
+            user = await BranchManager.findByIdAndUpdate(userId, { fcmToken }, { new: true });
+        } else {
+            user = await FieldVisitor.findByIdAndUpdate(userId, { fcmToken }, { new: true });
+        }
+
+        if (!user) {
+            res.status(404);
+            throw new Error('User not found');
+        }
+
+        res.json({
+            success: true,
+            message: 'FCM token updated successfully'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+module.exports = { loginUser, registerManager, updateManager, getManagerById, updateFcmToken };

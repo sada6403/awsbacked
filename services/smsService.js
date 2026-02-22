@@ -19,119 +19,49 @@ class ConsoleProvider extends SMSProvider {
     }
 }
 
-// SLT Mobitel Provider (SOAP)
-class SltMobitelProvider extends SMSProvider {
+// SLT Mobitel Provider (HTTP)
+class MobitelHttpProvider extends SMSProvider {
     constructor(apiUrl, username, password, senderId) {
         super();
-        this.apiUrl = apiUrl || 'http://smeapps.mobitel.lk:8585/EnterpriseSMS/EnterpriseSMSWS.php';
+        this.apiUrl = apiUrl || 'https://msmsenterpriseapi.mobitel.lk/EnterpriseSMSV3/esmsproxy.php';
         this.username = username;
         this.password = password;
-        this.senderId = senderId || 'NF Farming';
-    }
-
-    _sendSoapRequest(action, bodyXml) {
-        return new Promise((resolve, reject) => {
-            const envelope = `
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ws="http://ws.esms.mobitel.lk/">
-   <soapenv:Header/>
-   <soapenv:Body>
-      ${bodyXml}
-   </soapenv:Body>
-</soapenv:Envelope>`.trim();
-
-            const urlObj = new URL(this.apiUrl);
-            const client = urlObj.protocol === 'https:' ? https : http;
-
-            const options = {
-                hostname: urlObj.hostname,
-                port: urlObj.port,
-                path: urlObj.pathname,
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'text/xml;charset=UTF-8',
-                    'Content-Length': Buffer.byteLength(envelope),
-                    'SOAPAction': ''
-                }
-            };
-
-            const req = client.request(options, (res) => {
-                let data = '';
-                res.on('data', (chunk) => data += chunk);
-                res.on('end', () => {
-                    resolve({ statusCode: res.statusCode, body: data });
-                });
-            });
-
-            req.on('error', (e) => reject(e));
-            req.write(envelope);
-            req.end();
-        });
-    }
-
-    _extractTag(xml, tagName) {
-        const match = xml.match(new RegExp(`<${tagName}>(.*?)</${tagName}>`));
-        return match ? match[1] : null;
+        this.senderId = senderId || 'NF Groups';
     }
 
     async sendSMS(to, message) {
-        console.log(`[SLT Mobitel] Sending to ${to}...`);
+        console.log(`[Mobitel HTTP] Sending to ${to}...`);
 
         try {
-            // 1. Create Session
-            const loginXml = `
-              <ws:createSession>
-                 <arg0>
-                    <username>${this.username}</username>
-                    <password>${this.password}</password>
-                 </arg0>
-              </ws:createSession>`;
+            const url = new URL(this.apiUrl);
+            url.searchParams.append('u', this.username);
+            url.searchParams.append('p', this.password);
+            url.searchParams.append('r', to);
+            url.searchParams.append('m', message);
+            url.searchParams.append('a', this.senderId);
+            url.searchParams.append('t', '0'); // Non-Promotional
 
-            const loginRes = await this._sendSoapRequest('createSession', loginXml);
-
-            if (loginRes.statusCode !== 200) {
-                console.error('[SLT Mobitel] Login Failed:', loginRes.statusCode, loginRes.body);
-                return { success: false, error: 'Login Failed ' + loginRes.statusCode };
-            }
-
-            const returnBlock = loginRes.body.match(/<return>(.*?)<\/return>/s)?.[1];
-            if (!returnBlock) {
-                console.error('[SLT Mobitel] Failed to parse session:', loginRes.body);
-                return { success: false, error: 'Session Parse Error' };
-            }
-
-            // 2. Send Message
-            const msgXml = `
-              <ws:sendMessages>
-                 <arg0>${returnBlock}</arg0>
-                 <arg1>
-                    <message>${message}</message>
-                    <recipients>${to}</recipients>
-                    <sender>
-                       <alias>${this.senderId}</alias>
-                    </sender>
-                    <messageType>1</messageType>
-                 </arg1>
-              </ws:sendMessages>`;
-
-            const sendRes = await this._sendSoapRequest('sendMessages', msgXml);
-
-            if (sendRes.statusCode === 200) {
-                const result = this._extractTag(sendRes.body, 'return');
-                // SOAP return is likely '1' for success ? Or '200'? WSDL says return int.
-                console.log(`[SLT Mobitel] Sent Success. Return Code: ${result}`);
-
-                // 3. Close Session (Fire and forget)
-                const closeXml = `<ws:closeSession><arg0>${returnBlock}</arg0></ws:closeSession>`;
-                this._sendSoapRequest('closeSession', closeXml).catch(() => { });
-
-                return { success: true, id: result };
-            } else {
-                console.error('[SLT Mobitel] Send Failed:', sendRes.statusCode, sendRes.body);
-                return { success: false, error: 'Send Failed ' + sendRes.statusCode };
-            }
+            return new Promise((resolve, reject) => {
+                const client = url.protocol === 'https:' ? https : http;
+                client.get(url, (res) => {
+                    let data = '';
+                    res.on('data', (chunk) => data += chunk);
+                    res.on('end', () => {
+                        console.log(`[Mobitel HTTP] Response (${res.statusCode}): ${data}`);
+                        if (res.statusCode === 200 && data.trim() === '200') {
+                            resolve({ success: true, id: data });
+                        } else {
+                            resolve({ success: false, error: `Code: ${data}` });
+                        }
+                    });
+                }).on('error', (err) => {
+                    console.error('[Mobitel HTTP] Connection Error:', err);
+                    resolve({ success: false, error: err.message });
+                });
+            });
 
         } catch (e) {
-            console.error('[SLT Mobitel] Error:', e);
+            console.error('[Mobitel HTTP] Error:', e);
             return { success: false, error: e.message };
         }
     }
@@ -143,8 +73,8 @@ class SmsService {
 
         // Check if username/password exist
         if (MOBITEL_USERNAME && MOBITEL_PASSWORD) {
-            console.log('>>> SMS Service: Using SLT Mobitel Provider (SOAP)');
-            this.provider = new SltMobitelProvider(
+            console.log('>>> SMS Service: Using Mobitel HTTP Provider');
+            this.provider = new MobitelHttpProvider(
                 MOBITEL_API_URL,
                 MOBITEL_USERNAME,
                 MOBITEL_PASSWORD,
@@ -157,16 +87,32 @@ class SmsService {
     }
 
     async sendOTP(mobile, otp) {
-        // Sanitize: 947XXXXXXXX format preferred by Mobitel
-        const cleanMobile = mobile.replace(/^\+/, '');
+        // Sanitize: Ensure 94XXXXXXXXX format
+        const cleanMobile = this._formatMobile(mobile);
         console.log(`[SMS] Sanitized ${mobile} -> ${cleanMobile}`);
 
         const message = `Your Nature Farming OTP is: ${otp}. Valid for 2 minutes.`;
         return this.provider.sendSMS(cleanMobile, message);
     }
 
+    _formatMobile(mobile) {
+        let clean = mobile.replace(/\D/g, ''); // Remove non-digits
+
+        // Handle local 07X format
+        if (clean.startsWith('0') && clean.length === 10) {
+            clean = '94' + clean.substring(1);
+        }
+        // Handle 7X format (missing leading 0 or 94)
+        else if (clean.length === 9 && clean.startsWith('7')) {
+            clean = '94' + clean;
+        }
+        // Handle already 94 format (ensure it's not double prefixed? No, regex removed +)
+
+        return clean;
+    }
+
     async sendBillSMS(mobile, billData) {
-        const cleanMobile = mobile.replace(/^\+/, '');
+        const cleanMobile = this._formatMobile(mobile);
         const { name, type, billNumber, date, amount, productName, quantity, unitType, unitPrice } = billData;
 
         // Defensive null checks to prevent crashes
@@ -195,6 +141,17 @@ Date: ${safeDate}
 
 Thank you!`;
 
+        return this.provider.sendSMS(cleanMobile, message);
+    }
+
+    async sendRegistrationSuccessSMS(mobile, name, amount) {
+        const cleanMobile = mobile.replace(/^\+/, '');
+        const message = `Welcome to Nature Farming! Dear ${name}, we have received your registration fee of Rs. ${amount}. Your membership is now active. Thank you!`;
+        return this.provider.sendSMS(cleanMobile, message);
+    }
+
+    async sendGeneralSMS(mobile, message) {
+        const cleanMobile = mobile.replace(/^\+/, '');
         return this.provider.sendSMS(cleanMobile, message);
     }
 }

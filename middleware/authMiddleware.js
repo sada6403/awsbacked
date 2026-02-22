@@ -23,8 +23,8 @@ const protect = async (req, res, next) => {
                 return res.status(401).json({ message: 'Not authorized, invalid role' });
             }
 
-            // Attach branchId (prefer token payload, fallback to user document)
-            req.user.branchId = decoded.branchId || req.user?.branchId || 'default-branch';
+            // Attach branchId (prefer user document (fresh), fallback to token, then default)
+            req.user.branchId = req.user?.branchId || decoded.branchId || 'default-branch';
 
             next();
         } catch (error) {

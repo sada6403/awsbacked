@@ -1,0 +1,57 @@
+[
+  {
+    "_id": "69968c14fd7e555f0f798382",
+    "branchId": "BR-JA-001",
+    "productId": "PROD-ALOV-001",
+    "__v": 0,
+    "buyPrice": 54,
+    "createdAt": "2026-02-19T04:05:38.287Z",
+    "sellPrice": 50,
+    "updatedAt": "2026-02-19T04:05:38.287Z",
+    "updatedBy": "6975b6ed3dd8a44fcddffcdc"
+  },
+  {
+    "_id": "69968c21fd7e555f0f798383",
+    "branchId": "BR-JA-001",
+    "productId": "PROD-ALOV-002",
+    "__v": 0,
+    "buyPrice": 25,
+    "createdAt": "2026-02-19T04:05:51.892Z",
+    "sellPrice": 30,
+    "updatedAt": "2026-02-19T04:05:51.892Z",
+    "updatedBy": "6975b6ed3dd8a44fcddffcdc"
+  },
+  {
+    "_id": "69968c2cfd7e555f0f798384",
+    "branchId": "BR-JA-001",
+    "productId": "PROD-ALOV-003",
+    "__v": 0,
+    "buyPrice": 60,
+    "createdAt": "2026-02-19T04:06:02.442Z",
+    "sellPrice": 68,
+    "updatedAt": "2026-02-19T04:06:02.442Z",
+    "updatedBy": "6975b6ed3dd8a44fcddffcdc"
+  },
+  {
+    "_id": "699a7a2dcefae87b0fdcc2c2",
+    "branchId": "BR-JA-001",
+    "productId": "prod-aloe-packet",
+    "__v": 0,
+    "buyPrice": 50,
+    "createdAt": "2026-02-22T03:38:21.086Z",
+    "sellPrice": 60,
+    "updatedAt": "2026-02-22T03:38:29.565Z",
+    "updatedBy": "6975b6ed3dd8a44fcddffcdc"
+  },
+  {
+    "_id": "699a7a44cefae87b0fdcc2c3",
+    "productId": "prod-aloe-plant",
+    "branchId": "BR-JA-001",
+    "__v": 0,
+    "buyPrice": 25,
+    "createdAt": "2026-02-22T03:38:44.403Z",
+    "sellPrice": 30,
+    "updatedAt": "2026-02-22T03:38:44.403Z",
+    "updatedBy": "6975b6ed3dd8a44fcddffcdc"
+  }
+]

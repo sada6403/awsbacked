@@ -15,6 +15,7 @@ router.route('/')
 
 // 3. Individual Routes (Parameter-based, must be last)
 router.route('/:id')
-    .get(protect, getFieldVisitorById);
+    .get(protect, getFieldVisitorById)
+    .put(protect, require('../controllers/fieldVisitorController').updateFieldVisitor);
 
 module.exports = router;

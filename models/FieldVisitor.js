@@ -41,6 +41,9 @@ const FieldVisitorSchema = new mongoose.Schema({
     branchId: { type: String, required: true, default: 'default-branch', index: true },
     area: { type: String, required: true, default: 'default-area' },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+    walletBalance: { type: Number, default: 0 },
+    profileImage: { type: String }, // Base64 image string
+    fcmToken: { type: String, index: true },
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -55,4 +58,4 @@ FieldVisitorSchema.methods.matchPassword = async function (enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
 
-module.exports = mongoose.model('FieldVisitor', FieldVisitorSchema);
+module.exports = mongoose.model('FieldVisitor', FieldVisitorSchema, 'fieldvisitors');

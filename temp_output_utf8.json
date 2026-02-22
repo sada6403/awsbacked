@@ -1,0 +1,45 @@
+[
+  {
+    "_id": "Aloe Vera Packets",
+    "p": {
+      "_id": "699a67b115f2080bd433aabe",
+      "billNumber": "NF-B-20260222-00001",
+      "type": "buy",
+      "memberId": "699a5b95cefae87b0fdcc2bb",
+      "memberModel": "Member",
+      "fieldVisitorId": "6978bcb12f5c5781b4bc27fb",
+      "productName": "Aloe Vera Packets",
+      "quantity": 25,
+      "unitType": "packets",
+      "unitPrice": 25,
+      "totalAmount": 625,
+      "date": "2026-02-22T02:19:29.762Z",
+      "branchId": "BR-JA-001",
+      "pdfUrl": "/bills/NF-B-20260222-00001.pdf",
+      "createdAt": "2026-02-22T02:19:30.037Z",
+      "updatedAt": "2026-02-22T02:19:30.037Z",
+      "__v": 0
+    }
+  },
+  {
+    "_id": "Aloe Vera Plant",
+    "p": {
+      "_id": "698175eb4dfea6ac2b941ed9",
+      "billNumber": "NF-B-20260203-00001",
+      "type": "buy",
+      "memberId": "697af6bf2f5c5781b4bc2b3e",
+      "fieldVisitorId": "697af1de2f5c5781b4bc2afd",
+      "productName": "Aloe Vera Plant",
+      "quantity": 20,
+      "unitType": "plant",
+      "unitPrice": 32,
+      "totalAmount": 640,
+      "date": "2026-02-03T04:13:31.867Z",
+      "branchId": "BR-KM-001",
+      "pdfUrl": "/bills/NF-B-20260203-00001.pdf",
+      "createdAt": "2026-02-03T04:13:31.930Z",
+      "updatedAt": "2026-02-03T04:13:31.930Z",
+      "__v": 0
+    }
+  }
+]
