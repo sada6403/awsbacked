@@ -185,20 +185,14 @@ const verifyOtpsAndRegister = async (req, res) => {
         try {
             const Member = require('../models/Member');
             const memberData = {
-                _id: savedMember._id, // Keep same ID
+                _id: savedMember._id,
                 name: savedMember.name,
                 address: savedMember.address,
                 mobile: savedMember.mobile,
                 email: savedMember.email,
                 nic: savedMember.nic,
                 memberCode: savedMember.memberCode,
-                // fieldVisitorId: undefined, // Manager members don't have a field visitor
-                // Note: If Member schema requires fieldVisitorId, we might need a dummy or the Manager's ID if schema allows.
-                // For now, assuming Member schema permits optional or we are okay with sync failing if strict.
-                // Ideally, Manager ID should be used if Member schema `ref` allows BranchManager, 
-                // but usually it refers to FieldVisitor. 
-                // We'll proceed with sending memberCode which is the critical fix for Dashboard counts.
-
+                fieldVisitorId: savedMember.collectedBy, // Link to manager's ID for dashboard stats
                 branchId: savedMember.branchId,
                 area: 'Manager-Office',
                 registeredAt: savedMember.collectedAt,
@@ -318,6 +312,7 @@ const registerMember = async (req, res) => {
                 email: savedMember.email,
                 nic: savedMember.nic,
                 memberCode: savedMember.memberCode,
+                fieldVisitorId: savedMember.collectedBy, // Added for dashboard counts
                 idFrontImage: savedMember.idFrontImage,
                 idBackImage: savedMember.idBackImage,
                 branchId: savedMember.branchId,
