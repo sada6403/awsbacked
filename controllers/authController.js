@@ -68,35 +68,45 @@ const loginUser = async (req, res, next) => {
 // @access  Public (or Private depending on your requirements)
 const registerManager = async (req, res, next) => {
     try {
-        const { fullName, email, password, userId, branchName, branchId, phone } = req.body;
+        const { fullName, email, password, branchName, phone } = req.body;
 
-        // Validate required fields
-        if (!fullName || !email || !password || !userId) {
+        // Validate required fields (userId is now auto-generated)
+        if (!fullName || !email || !password) {
             return res.status(400).json({
                 success: false,
-                message: 'Please provide all required fields: fullName, email, password, userId'
+                message: 'Please provide all required fields: fullName, email, password'
             });
         }
 
-        // Check if manager already exists
-        const managerExists = await BranchManager.findOne({
-            $or: [{ email }, { userId }]
-        });
+        // Check if manager already exists by email
+        const managerExists = await BranchManager.findOne({ email });
         if (managerExists) {
             return res.status(400).json({
                 success: false,
-                message: 'Manager with this email or userId already exists'
+                message: 'Manager with this email already exists'
             });
         }
+
+        // Auto-generate userId using smart branch code generation
+        const { generateUniqueBranchCode, getNextSequence } = require('../utils/branchCodeGenerator');
+
+        // Generate unique branch code from manager's name (2-4 letters with collision detection)
+        const branchCode = await generateUniqueBranchCode(fullName, 'manager');
+
+        // Get next sequence number for this branch code
+        const sequence = await getNextSequence(branchCode, 'BM');
+
+        // Generate userId: BM-{BranchCode}-{Sequence}
+        const userId = `BM-${branchCode}-${sequence}`;
 
         // Create new manager instance
         const newManager = new BranchManager({
             fullName,
             email,
             password,
-            userId,
-            branchName: branchName || 'Kalmunai',
-            branchId: branchId || 'branch-default',
+            userId, // Auto-generated
+            branchName: branchName || 'Default Branch',
+            branchId: branchCode.toLowerCase(), // Use branch code as branchId
             phone: phone || '',
             role: 'branch_manager',
             status: 'active'
@@ -115,8 +125,10 @@ const registerManager = async (req, res, next) => {
                 name: savedManager.fullName,
                 email: savedManager.email,
                 code: savedManager.userId,
+                userId: savedManager.userId, // Include userId for clarity
                 role: 'manager',
                 branchId: savedManager.branchId,
+                branchCode: branchCode, // Return branch code for reference
                 phone: savedManager.phone,
                 token: generateToken(savedManager._id, 'manager', savedManager.branchId)
             }

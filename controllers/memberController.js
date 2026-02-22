@@ -168,54 +168,13 @@ const registerMember = async (req, res, next) => {
 
         res.status(201).json({
             success: true,
-            created: true,
             message: 'Member registered successfully',
             data: savedMember,
             pdfUrl
         });
     } catch (error) {
         console.error('Member Registration Error:', error);
-
-        // Duplicate key error
-        if (error.code === 11000 || error.code === 11001) {
-            const field = Object.keys(error.keyPattern || {})[0] || 'data';
-
-            // For older APKs, we might want to return 200 OK with the existing member
-            // Search for the existing member by NIC or Mobile
-            const { nic, mobile } = req.body;
-            const existing = await Member.findOne({ $or: [{ nic }, { mobile }] });
-
-            if (existing) {
-                console.log(`[registerMember] Duplicate ${field} detected. Returning existing member.`);
-                return res.status(200).json({
-                    success: true,
-                    created: false,
-                    message: `Member with this ${field} already exists`,
-                    data: existing
-                });
-            }
-
-            return res.status(400).json({
-                success: false,
-                message: `Member with this ${field} already exists`
-            });
-        }
-
-        // Mongoose validation error
-        if (error.name === 'ValidationError') {
-            const messages = Object.values(error.errors).map(val => val.message);
-            return res.status(400).json({
-                success: false,
-                message: messages.join(', ')
-            });
-        }
-
-        // General server error
-        res.status(500).json({
-            success: false,
-            message: 'Registration failed',
-            error: error.message
-        });
+        res.status(500).json({ success: false, message: 'Registration failed', error: error.message });
     }
 };
 

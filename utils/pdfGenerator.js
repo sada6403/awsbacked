@@ -40,7 +40,7 @@ const generateBillPDF = (transaction, member, officer) => {
             const headerY = 45;
             const leftX = 110;
 
-            doc.fillColor(black).fontSize(20).font('Helvetica-Bold').text('Nature Farming (Pvt) Ltd', leftX, headerY);
+            doc.fillColor(black).fontSize(20).font('Helvetica-Bold').text('Nature Farming', leftX, headerY);
             doc.fontSize(10).font('Helvetica')
                 .text('Kilinochi, Sri Lanka', leftX, headerY + 25)
                 .text('Phone: 024 433 5099', leftX, headerY + 40)
@@ -85,8 +85,8 @@ const generateBillPDF = (transaction, member, officer) => {
 
             // Col 1: Member
             doc.text(`Name: ${member.name || member.fullName || 'Unknown'}`, col1, contentTop);
-            doc.text(`Phone: ${member.mobile || member.phone || 'N/A'}`, col1, contentTop + 15);
-            doc.text(`Addr: ${member.address || member.postal_address || 'N/A'}`, col1, contentTop + 30, { width: colWidth - 5 });
+            doc.text(`Phone: ${member.mobile || 'N/A'}`, col1, contentTop + 15);
+            doc.text(`Addr: ${member.address || 'N/A'}`, col1, contentTop + 30, { width: colWidth - 5 });
 
             // Col 2: Officer (FV or Manager)
             const officerName = officer ? (officer.name || officer.fullName || 'Unknown') : 'Unknown';

@@ -90,30 +90,27 @@ const registerFieldVisitor = async (req, res, next) => {
         // Determine Area from input (This fixes 'default-area' display)
         const area = req.body.branch || 'default-area';
 
-        // Determine Branch Code for ID Generation
+        // Determine Branch Code for ID Generation using smart collision detection
         let branchCode = 'GEN';
 
-        // logic: FV-(branch 2 letter)-3 digite number
-        // "branch 2 letter is similar to brange manager's user id"
-        // ex: Manager BM-KM-001 -> Branch Code is KM.
-        // ex: Manager MGR-KM-001 -> Branch Code is KM.
+        // Import branch code generator utility
+        const { getNextSequence } = require('../utils/branchCodeGenerator');
+
+        // Extract branch code from manager's userId
+        // Format: MGR-{BranchCode}-{Sequence} → Extract BranchCode
         if (req.user && req.user.userId) {
             const parts = req.user.userId.split('-');
-            // Expecting format PREFIX-BRANCH-SEQ (MGR-KM-001)
+            // Expecting format PREFIX-BRANCH-SEQ (MGR-KM-001 or MGR-KUM-001)
             if (parts.length >= 2) {
-                branchCode = parts[1];
+                branchCode = parts[1]; // This will be KM, KUM, KUMA, etc.
             }
         } else if (area !== 'default-area') {
             // Fallback: use first 2 letters of the provided branch name
             branchCode = area.substring(0, 2).toUpperCase();
         }
 
-        // Generate User ID: FV-{BranchCode}-XXX
-        // Count existing users with this pattern to determine sequence
-        const count = await FieldVisitor.countDocuments({
-            userId: { $regex: new RegExp(`^FV-${branchCode}-\\d{3}$`) }
-        });
-        const sequence = (count + 1).toString().padStart(3, '0');
+        // Generate User ID: FV-{BranchCode}-XXX using the utility function
+        const sequence = await getNextSequence(branchCode, 'FV');
         const generatedUserId = `FV-${branchCode}-${sequence}`;
 
         // Generate Random Password: NF + 5 random digits
@@ -190,7 +187,6 @@ const registerFieldVisitor = async (req, res, next) => {
         // Return the saved document immediately with consistent field names
         res.status(201).json({
             success: true,
-            created: true,
             message: 'Field Visitor registered successfully',
             data: {
                 id: savedFieldVisitor._id.toString(), // Use 'id' for Flutter compatibility
@@ -210,30 +206,10 @@ const registerFieldVisitor = async (req, res, next) => {
         console.error('Field Visitor Registration Error:', error);
 
         // Duplicate key error
-        if (error.code === 11000 || error.code === 11001) {
-            const { phone, nic } = req.body;
-            const existing = await FieldVisitor.findOne({ $or: [{ phone }, { nic }] });
-
-            if (existing) {
-                console.log(`[registerFieldVisitor] Duplicate detected. Returning existing Field Visitor.`);
-                return res.status(200).json({
-                    success: true,
-                    created: false,
-                    message: 'Field Visitor with this info already exists',
-                    data: {
-                        id: existing._id.toString(),
-                        _id: existing._id,
-                        name: existing.name,
-                        userId: existing.userId,
-                        phone: existing.phone,
-                        role: 'field_visitor'
-                    }
-                });
-            }
-
+        if (error.code === 11000) {
             return res.status(400).json({
                 success: false,
-                message: 'Field Visitor with this info already exists'
+                message: 'Field Visitor with this User ID already exists'
             });
         }
 
@@ -259,43 +235,37 @@ const registerFieldVisitor = async (req, res, next) => {
 // @route   GET /api/fieldvisitors
 // @access  Private
 const getFieldVisitors = async (req, res) => {
-    try {
-        const branchId = req.user?.branchId || 'default-branch';
+    const branchId = req.user?.branchId || 'default-branch';
 
-        // Check if pagination is requested via query params
-        const pageNumber = req.query.pageNumber;
-        const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null;
+    // Check if pagination is requested via query params
+    const pageNumber = req.query.pageNumber;
+    const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null;
 
-        const count = await FieldVisitor.countDocuments({ branchId });
+    const count = await FieldVisitor.countDocuments({ branchId });
 
-        let query = FieldVisitor.find({ branchId });
+    let query = FieldVisitor.find({ branchId });
 
-        const attachCounts = async (visitors) => {
-            return Promise.all(visitors.map(async (v) => {
-                const membersCount = await Member.countDocuments({ fieldVisitorId: v._id });
-                const leadsCount = await ExtraMember.countDocuments({ collectedBy: v._id });
-                return { ...v, membersCount, leadsCount };
-            }));
-        };
+    const attachCounts = async (visitors) => {
+        return Promise.all(visitors.map(async (v) => {
+            const membersCount = await Member.countDocuments({ fieldVisitorId: v._id });
+            const leadsCount = await ExtraMember.countDocuments({ collectedBy: v._id });
+            return { ...v, membersCount, leadsCount };
+        }));
+    };
 
-        // Only apply pagination if explicitly requested
-        let fieldVisitors;
-        if (pageNumber && pageSize) {
-            const page = Number(pageNumber);
-            query = query.limit(pageSize).skip(pageSize * (page - 1));
-            fieldVisitors = await query.lean();
-            fieldVisitors = await attachCounts(fieldVisitors);
-            return res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize), total: count });
-        }
-
-        // Otherwise, return all field visitors (no limit)
-        fieldVisitors = await query.lean();
+    // Only apply pagination if explicitly requested
+    if (pageNumber && pageSize) {
+        const page = Number(pageNumber);
+        query = query.limit(pageSize).skip(pageSize * (page - 1));
+        let fieldVisitors = await query.lean();
         fieldVisitors = await attachCounts(fieldVisitors);
-        res.json({ fieldVisitors, total: count });
-    } catch (error) {
-        console.error('Fetch Field Visitors Error:', error);
-        res.status(500).json({ success: false, message: 'Server Error' });
+        return res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize), total: count });
     }
+
+    // Otherwise, return all field visitors (no limit)
+    let fieldVisitors = await query.lean();
+    fieldVisitors = await attachCounts(fieldVisitors);
+    res.json({ fieldVisitors, total: count });
 };
 
 // Notification require moved to top
