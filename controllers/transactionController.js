@@ -260,8 +260,6 @@ const createTransaction = async (req, res) => {
                 }
 
                 saved = await transaction.save();
-<<<<<<< HEAD
-=======
 
                 // Determine if this is a first transaction for a lead or manager-member
                 const isFirstTransactionLead = (memberModel === 'ManagersMember' && !member.isFirstTransactionDone);
@@ -272,7 +270,6 @@ const createTransaction = async (req, res) => {
                 }
 
                 // If save is successful, break the loop
->>>>>>> a527a77 (Update backend with company transfer logic and error handling)
                 break;
             } catch (err) {
                 const isDuplicate = err.code === 11000 || err.code === 11001 || (err.message && err.message.includes('E11000'));
@@ -543,10 +540,7 @@ const downloadBill = async (req, res) => {
 
         // Find transaction with populated data (Include address/phone/area for PDF)
         const transaction = await Transaction.findById(id)
-<<<<<<< HEAD
             .populate('memberId', 'name mobile phone memberCode address postal_address')
-=======
->>>>>>> a527a77 (Update backend with company transfer logic and error handling)
             .populate('fieldVisitorId', 'name userId fullName phone area')
             .lean();
 

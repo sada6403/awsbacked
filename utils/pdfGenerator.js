@@ -44,11 +44,7 @@ const generateBillPDF = (transaction, member, officer) => {
             doc.fontSize(10).font('Helvetica')
                 .text('Kilinochi, Sri Lanka', leftX, headerY + 25)
                 .text('Phone: 024 433 5099', leftX, headerY + 40)
-<<<<<<< HEAD
-                .text('Email: nffplantation.offficial.it@gmil.com', leftX, headerY + 55);
-=======
                 .text('Email: nfplantation.official.it@gmail.com', leftX, headerY + 55);
->>>>>>> a527a77 (Update backend with company transfer logic and error handling)
 
             // Title (Right Aligned)
             doc.fillColor(primaryColor).fontSize(28).font('Helvetica-Bold')
@@ -88,15 +84,9 @@ const generateBillPDF = (transaction, member, officer) => {
             doc.fillColor(black).fontSize(9).font('Helvetica');
 
             // Col 1: Member
-<<<<<<< HEAD
-            doc.text(`Name: ${member.name || 'Unknown'}`, col1, contentTop);
+            doc.text(`Name: ${member.name || member.fullName || 'Unknown'}`, col1, contentTop);
             doc.text(`Phone: ${member.mobile || member.phone || 'N/A'}`, col1, contentTop + 15);
             doc.text(`Addr: ${member.address || member.postal_address || 'N/A'}`, col1, contentTop + 30, { width: colWidth - 5 });
-=======
-            doc.text(`Name: ${member.name || member.fullName || 'Unknown'}`, col1, contentTop);
-            doc.text(`Phone: ${member.mobile || 'N/A'}`, col1, contentTop + 15);
-            doc.text(`Addr: ${member.address || 'N/A'}`, col1, contentTop + 30, { width: colWidth - 5 });
->>>>>>> a527a77 (Update backend with company transfer logic and error handling)
 
             // Col 2: Officer (FV or Manager)
             const officerName = officer ? (officer.name || officer.fullName || 'Unknown') : 'Unknown';

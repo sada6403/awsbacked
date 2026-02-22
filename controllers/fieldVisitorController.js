@@ -265,47 +265,39 @@ const getFieldVisitors = async (req, res) => {
             .sort({ name: 1 })
             .lean();
 
-<<<<<<< HEAD
-        res.json({
-            success: true,
-            fieldVisitors,
-            count: fieldVisitors.length
-        });
+        // Check if pagination is requested via query params
+        const pageNumber = req.query.pageNumber;
+        const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null;
+
+        const count = await FieldVisitor.countDocuments({ branchId });
+
+        let query = FieldVisitor.find({ branchId });
+
+        const attachCounts = async (visitors) => {
+            return Promise.all(visitors.map(async (v) => {
+                const membersCount = await Member.countDocuments({ fieldVisitorId: v._id });
+                const leadsCount = await ExtraMember.countDocuments({ collectedBy: v._id });
+                return { ...v, membersCount, leadsCount };
+            }));
+        };
+
+        // Only apply pagination if explicitly requested
+        if (pageNumber && pageSize) {
+            const page = Number(pageNumber);
+            query = query.limit(pageSize).skip(pageSize * (page - 1));
+            let fieldVisitors = await query.lean();
+            fieldVisitors = await attachCounts(fieldVisitors);
+            return res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize), total: count });
+        }
+
+        // Otherwise, return all field visitors (no limit)
+        let fieldVisitors = await query.lean();
+        fieldVisitors = await attachCounts(fieldVisitors);
+        res.json({ fieldVisitors, total: count });
     } catch (error) {
         console.error('Fetch Field Visitors Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
     }
-=======
-    // Check if pagination is requested via query params
-    const pageNumber = req.query.pageNumber;
-    const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null;
-
-    const count = await FieldVisitor.countDocuments({ branchId });
-
-    let query = FieldVisitor.find({ branchId });
-
-    const attachCounts = async (visitors) => {
-        return Promise.all(visitors.map(async (v) => {
-            const membersCount = await Member.countDocuments({ fieldVisitorId: v._id });
-            const leadsCount = await ExtraMember.countDocuments({ collectedBy: v._id });
-            return { ...v, membersCount, leadsCount };
-        }));
-    };
-
-    // Only apply pagination if explicitly requested
-    if (pageNumber && pageSize) {
-        const page = Number(pageNumber);
-        query = query.limit(pageSize).skip(pageSize * (page - 1));
-        let fieldVisitors = await query.lean();
-        fieldVisitors = await attachCounts(fieldVisitors);
-        return res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize), total: count });
-    }
-
-    // Otherwise, return all field visitors (no limit)
-    let fieldVisitors = await query.lean();
-    fieldVisitors = await attachCounts(fieldVisitors);
-    res.json({ fieldVisitors, total: count });
->>>>>>> a527a77 (Update backend with company transfer logic and error handling)
 };
 
 // Notification require moved to top
