@@ -142,6 +142,9 @@ const getManagerDashboard = async (req, res) => {
         const totalTransactions = fieldVisitorStats.reduce((sum, fv) => sum + fv.transactionCount, 0);
         const totalMembers = fieldVisitorStats.reduce((sum, fv) => sum + fv.memberCount, 0);
 
+        // Calculate the Manager's own members count for the "Add Member" tile
+        const managersMemberCount = managerMap.get(req.user._id.toString()) || 0;
+
         const pie = {
             total: totalBranchAmount,
             slices: fieldVisitorStats.map(fv => ({
@@ -206,6 +209,7 @@ const getManagerDashboard = async (req, res) => {
                 totalBranchAmount,
                 totalTransactions,
                 totalMembers,
+                managersMemberCount, // Added for Manager Dashboard 'Add Member' count
                 fieldVisitors: fieldVisitorStats,
                 notifications, // Include recent notifications
                 unreadNotificationsCount, // Include total unread count
