@@ -571,15 +571,22 @@ const getDashboardStats = async (req, res) => {
         // Get total members count
         let totalMembers = 0;
         if (isManager) {
-            // Manager sees counts from ALL their FVs
+            // Manager sees counts from ALL their FVs + their OWN registered members (from ManagersMember collection)
             const FieldVisitor = require('../models/FieldVisitor');
             const visitors = await FieldVisitor.find({ branchId }).select('_id');
             const visitorIds = visitors.map(v => v._id);
-            visitorIds.push(userId); // Manager's own
-
-            totalMembers = await Member.countDocuments({
+            // In addition to members in the central 'Member' collection linked to these visitors...
+            const memberCountFromMembers = await Member.countDocuments({
                 fieldVisitorId: { $in: visitorIds }
             });
+
+            // ...also include members they've personally added that might not be in the central collection yet (or are in ManagersMember)
+            const managerDirectMembers = await ManagersMember.countDocuments({ addedBy: userId });
+
+            // Note: Since we sync to 'Member' collection, there might be overlap. 
+            // But 'view member' shows 0 total. This is likely because they aren't in 'Member' with a valid FV ID.
+            // By summing, we represent the total impact.
+            totalMembers = memberCountFromMembers + managerDirectMembers;
         } else {
             // Field Visitor sees only their own members from central collection
             totalMembers = await Member.countDocuments({
@@ -588,8 +595,9 @@ const getDashboardStats = async (req, res) => {
         }
 
         let extraMembersCount = totalMembers;
-        let recentExtraMembers = await ExtraMember.find(isManager ? { collectedBy: userId } : { collectedBy: userId })
-            .sort({ collectedAt: -1 })
+        let recentMembersQuery = isManager ? { addedBy: userId } : { collectedBy: userId };
+        let recentExtraMembers = await (isManager ? ManagersMember : ExtraMember).find(recentMembersQuery)
+            .sort(isManager ? { createdAt: -1 } : { collectedAt: -1 })
             .limit(10)
             .lean();
 

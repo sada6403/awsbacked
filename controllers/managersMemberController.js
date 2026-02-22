@@ -1,7 +1,7 @@
 const Otp = require('../models/Otp');
 const smsService = require('../services/smsService');
 const emailService = require('../services/emailService');
-const ExtraMember = require('../models/ExtraMember');
+const ManagersMember = require('../models/ManagersMember');
 const BranchManager = require('../models/BranchManager');
 const { generateMemberCode } = require('../utils/memberHelper');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
@@ -19,7 +19,7 @@ const sendRegistrationOtp = async (req, res) => {
         }
 
         // Check if member already exists
-        const existingMember = await ExtraMember.findOne({ mobile });
+        const existingMember = await ManagersMember.findOne({ mobile });
         if (existingMember) {
             return res.status(400).json({ success: false, message: 'Member with this mobile number already exists' });
         }
@@ -67,7 +67,7 @@ const sendRegistrationEmailOtp = async (req, res) => {
         }
 
         // Check if member already exists with this email
-        const existingMember = await ExtraMember.findOne({ email });
+        const existingMember = await ManagersMember.findOne({ email });
         if (existingMember) {
             return res.status(400).json({ success: false, message: 'Member with this email already exists' });
         }
@@ -151,7 +151,7 @@ const verifyOtpsAndRegister = async (req, res) => {
         const orConditions = [{ mobile }];
         if (email) orConditions.push({ email });
 
-        const existingMember = await ExtraMember.findOne({
+        const existingMember = await ManagersMember.findOne({
             $or: orConditions
         });
         if (existingMember) {
@@ -167,16 +167,16 @@ const verifyOtpsAndRegister = async (req, res) => {
         const generatedMemberCode = await generateMemberCode(branchId, req.user.role, req.user);
         // ---------------------------------
 
-        const newMember = new ExtraMember({
+        const newMember = new ManagersMember({
             name,
             address,
             mobile,
             email,
             nic,
             memberCode: generatedMemberCode,
-            collectedBy: managerId,
+            addedBy: managerId,
             branchId: req.user.branchId || 'default-branch',
-            collectedAt: new Date()
+            createdAt: new Date()
         });
 
         const savedMember = await newMember.save();
@@ -192,10 +192,10 @@ const verifyOtpsAndRegister = async (req, res) => {
                 email: savedMember.email,
                 nic: savedMember.nic,
                 memberCode: savedMember.memberCode,
-                fieldVisitorId: savedMember.collectedBy, // Link to manager's ID for dashboard stats
+                fieldVisitorId: savedMember.addedBy, // Link to manager's ID for dashboard stats
                 branchId: savedMember.branchId,
                 area: 'Manager-Office',
-                registeredAt: savedMember.collectedAt,
+                registeredAt: savedMember.createdAt,
             };
 
             await Member.findOneAndUpdate(
@@ -271,7 +271,7 @@ const registerMember = async (req, res) => {
         if (mobile) mobile = mobile.replace(/\s+/g, '');
 
         // Check duplications
-        const existingMember = await ExtraMember.findOne({ mobile });
+        const existingMember = await ManagersMember.findOne({ mobile });
         if (existingMember) {
             return res.status(409).json({
                 success: false,
@@ -285,7 +285,7 @@ const registerMember = async (req, res) => {
         const generatedMemberCode = await generateMemberCode(branchId, req.user.role, req.user);
         // ---------------------------------
 
-        const newMember = new ExtraMember({
+        const newMember = new ManagersMember({
             name,
             address,
             mobile,
@@ -294,9 +294,9 @@ const registerMember = async (req, res) => {
             idFrontImage,
             idBackImage,
             memberCode: generatedMemberCode,
-            collectedBy: managerId,
+            addedBy: managerId,
             branchId: req.user.branchId || 'default-branch',
-            collectedAt: new Date()
+            createdAt: new Date()
         });
 
         const savedMember = await newMember.save();
@@ -312,12 +312,12 @@ const registerMember = async (req, res) => {
                 email: savedMember.email,
                 nic: savedMember.nic,
                 memberCode: savedMember.memberCode,
-                fieldVisitorId: savedMember.collectedBy, // Added for dashboard counts
+                fieldVisitorId: savedMember.addedBy, // Added for dashboard counts
                 idFrontImage: savedMember.idFrontImage,
                 idBackImage: savedMember.idBackImage,
                 branchId: savedMember.branchId,
                 area: 'Manager-Office',
-                registeredAt: savedMember.collectedAt,
+                registeredAt: savedMember.createdAt,
             };
 
             await Member.findOneAndUpdate(
@@ -377,7 +377,7 @@ const registerMember = async (req, res) => {
 const getMyMembers = async (req, res) => {
     try {
         const managerId = req.user._id;
-        const members = await ExtraMember.find({ collectedBy: managerId }).sort({ collectedAt: -1 });
+        const members = await ManagersMember.find({ addedBy: managerId }).sort({ createdAt: -1 });
         res.status(200).json({ success: true, count: members.length, data: members });
     } catch (error) {
         console.error('Get Members Error:', error);
@@ -393,8 +393,8 @@ const getRecentMembers = async (req, res) => {
         const managerId = req.user._id;
         const limit = parseInt(req.query.limit) || 5;
 
-        const members = await ExtraMember.find({ collectedBy: managerId })
-            .sort({ collectedAt: -1 })
+        const members = await ManagersMember.find({ addedBy: managerId })
+            .sort({ createdAt: -1 })
             .limit(limit);
 
         res.status(200).json({ success: true, count: members.length, data: members });
@@ -412,9 +412,9 @@ const getMemberDetails = async (req, res) => {
         const managerId = req.user._id;
         const { memberId } = req.params;
 
-        const member = await ExtraMember.findOne({
+        const member = await ManagersMember.findOne({
             _id: memberId,
-            collectedBy: managerId
+            addedBy: managerId
         });
 
         if (!member) {
@@ -437,7 +437,7 @@ const sendTransactionOtp = async (req, res) => {
         }
 
         // Check if member exists and needs OTP
-        const existingMember = await ExtraMember.findOne({ mobile });
+        const existingMember = await ManagersMember.findOne({ mobile });
         if (!existingMember) {
             return res.status(404).json({ success: false, message: 'Member not found' });
         }
