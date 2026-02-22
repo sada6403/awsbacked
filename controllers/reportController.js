@@ -200,6 +200,10 @@ const getFieldVisitorDashboard = async (req, res) => {
         let fieldVisitorId = req.user?._id;
         if (fieldVisitorId) fieldVisitorId = new mongoose.Types.ObjectId(fieldVisitorId);
 
+        // Fetch Field Visitor info for wallet balance
+        const visitor = await FieldVisitor.findById(fieldVisitorId).lean();
+        const walletBalance = visitor?.walletBalance || 0;
+
         // Get BUY and SELL totals separately for accurate dashboard
         const transactionBreakdown = await Transaction.aggregate([
             { $match: { branchId, fieldVisitorId } },
@@ -285,8 +289,7 @@ const getFieldVisitorDashboard = async (req, res) => {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-        // BUY Pie Chart - This Visitor vs Others (by quantity)
-        const buyQuantityBreakdown = await Transaction.aggregate([
+        const buyAmountBreakdown = await Transaction.aggregate([
             {
                 $match: {
                     branchId,
@@ -297,14 +300,14 @@ const getFieldVisitorDashboard = async (req, res) => {
             {
                 $group: {
                     _id: '$fieldVisitorId',
-                    totalQuantity: { $sum: '$quantity' }
+                    totalAmount: { $sum: '$totalAmount' }
                 }
             }
         ]);
 
         let buyThisVisitor = 0;
         let buyOthers = 0;
-        const buyMap = new Map(buyQuantityBreakdown.map(b => [b._id?.toString(), b.totalQuantity]));
+        const buyMap = new Map(buyAmountBreakdown.map(b => [b._id?.toString(), b.totalAmount]));
 
         buyMap.forEach((qty, fvId) => {
             if (fvId === fieldVisitorId.toString()) {
@@ -314,8 +317,7 @@ const getFieldVisitorDashboard = async (req, res) => {
             }
         });
 
-        // SELL Pie Chart - This Visitor vs Others (by quantity)
-        const sellQuantityBreakdown = await Transaction.aggregate([
+        const sellAmountBreakdown = await Transaction.aggregate([
             {
                 $match: {
                     branchId,
@@ -326,14 +328,14 @@ const getFieldVisitorDashboard = async (req, res) => {
             {
                 $group: {
                     _id: '$fieldVisitorId',
-                    totalQuantity: { $sum: '$quantity' }
+                    totalAmount: { $sum: '$totalAmount' }
                 }
             }
         ]);
 
         let sellThisVisitor = 0;
         let sellOthers = 0;
-        const sellMap = new Map(sellQuantityBreakdown.map(s => [s._id?.toString(), s.totalQuantity]));
+        const sellMap = new Map(sellAmountBreakdown.map(s => [s._id?.toString(), s.totalAmount]));
 
         sellMap.forEach((qty, fvId) => {
             if (fvId === fieldVisitorId.toString()) {
@@ -392,12 +394,29 @@ const getFieldVisitorDashboard = async (req, res) => {
             isRead: false
         });
 
+        // Added for Targets and Wallet
+        const monthlyLeads = await ExtraMember.countDocuments({
+            collectedBy: fieldVisitorId,
+            collectedAt: { $gte: startOfMonth, $lte: endOfMonth }
+        });
+
+        const annualLeads = await ExtraMember.countDocuments({
+            collectedBy: fieldVisitorId,
+            collectedAt: {
+                $gte: new Date(new Date().getFullYear(), 0, 1),
+                $lte: new Date(new Date().getFullYear(), 11, 31, 23, 59, 59)
+            }
+        });
+
         res.json({
             success: true,
             data: {
                 branchId,
                 totals: fvTotals,
-                totalMembers, // Added for Promotion Journey
+                walletBalance,
+                totalMembers,
+                monthlyLeads,
+                annualLeads,
                 buyPieChart,
                 sellPieChart,
                 branchPie,
@@ -469,6 +488,13 @@ const getDashboardStats = async (req, res) => {
 
         if (userId) {
             userId = new mongoose.Types.ObjectId(userId);
+        }
+
+        // Fetch Field Visitor info for wallet balance (needed for Rs.0.00 fix)
+        let walletBalance = 0;
+        if (!isManager) {
+            const visitor = await FieldVisitor.findById(userId).lean();
+            walletBalance = visitor?.walletBalance || 0;
         }
 
         // Get current month's date range
@@ -720,6 +746,7 @@ const getDashboardStats = async (req, res) => {
             data: {
                 buy: { amount: buyAmount },
                 sell: { amount: sellAmount },
+                walletBalance,
                 monthlyTotals: {
                     buyAmount,
                     sellAmount,
