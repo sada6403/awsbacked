@@ -381,22 +381,30 @@ const getMyMembers = async (req, res) => {
         const managerId = req.user._id;
         const userOid = new mongoose.Types.ObjectId(managerId);
 
+        console.log(`[getMyMembers] Manager: ${req.user.role} | ID: ${managerId}`);
+
         const [mgrMembers, extMembers] = await Promise.all([
             ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).lean(),
             ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).lean()
         ]);
 
-        // Merge and sort by date
+        console.log(`[getMyMembers] Found: ManagersMember=${mgrMembers.length}, ExtraMember=${extMembers.length}`);
+
+        // Merge and sort by date with robustness
         const members = [...mgrMembers, ...extMembers].sort((a, b) => {
-            const dateA = a.createdAt || a.collectedAt || 0;
-            const dateB = b.createdAt || b.collectedAt || 0;
+            const dateA = new Date(a.createdAt || a.collectedAt || 0);
+            const dateB = new Date(b.createdAt || b.collectedAt || 0);
             return dateB - dateA;
         });
 
         res.status(200).json({ success: true, count: members.length, data: members });
     } catch (error) {
-        console.error('Get Members Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch members' });
+        console.error('[getMyMembers] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch members',
+            error: error.message
+        });
     }
 };
 
@@ -409,6 +417,8 @@ const getRecentMembers = async (req, res) => {
         const userOid = new mongoose.Types.ObjectId(managerId);
         const limit = parseInt(req.query.limit) || 5;
 
+        console.log(`[getRecentMembers] Manager: ${managerId} | Limit: ${limit}`);
+
         const [mgrMembers, extMembers] = await Promise.all([
             ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).limit(limit).lean(),
             ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).limit(limit).lean()
@@ -416,15 +426,19 @@ const getRecentMembers = async (req, res) => {
 
         // Merge and sort
         const members = [...mgrMembers, ...extMembers].sort((a, b) => {
-            const dateA = a.createdAt || a.collectedAt || 0;
-            const dateB = b.createdAt || b.collectedAt || 0;
+            const dateA = new Date(a.createdAt || a.collectedAt || 0);
+            const dateB = new Date(b.createdAt || b.collectedAt || 0);
             return dateB - dateA;
         }).slice(0, limit);
 
         res.status(200).json({ success: true, count: members.length, data: members });
     } catch (error) {
-        console.error('Get Recent Members Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch recent members' });
+        console.error('[getRecentMembers] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch recent members',
+            error: error.message
+        });
     }
 };
 
@@ -436,6 +450,8 @@ const getMemberDetails = async (req, res) => {
         const managerId = req.user._id;
         const { memberId } = req.params;
         const userOid = new mongoose.Types.ObjectId(managerId);
+
+        console.log(`[getMemberDetails] Manager: ${managerId} | Member: ${memberId}`);
 
         let member = await ManagersMember.findOne({
             _id: memberId,
@@ -455,8 +471,12 @@ const getMemberDetails = async (req, res) => {
 
         res.status(200).json({ success: true, data: member });
     } catch (error) {
-        console.error('Get Member Details Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to fetch member details' });
+        console.error('[getMemberDetails] Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch member details',
+            error: error.message
+        });
     }
 };
 
