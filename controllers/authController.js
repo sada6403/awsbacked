@@ -89,21 +89,6 @@ const registerManager = async (req, res, next) => {
             });
         }
 
-<<<<<<< HEAD
-=======
-        // Auto-generate userId using smart branch code generation
-        const { generateUniqueBranchCode, getNextSequence } = require('../utils/branchCodeGenerator');
-
-        // Generate unique branch code from manager's name (2-4 letters with collision detection)
-        const branchCode = await generateUniqueBranchCode(fullName, 'manager');
-
-        // Get next sequence number for this branch code
-        const sequence = await getNextSequence(branchCode, 'BM');
-
-        // Generate userId: BM-{BranchCode}-{Sequence}
-        const userId = `BM-${branchCode}-${sequence}`;
-
->>>>>>> a527a77 (Update backend with company transfer logic and error handling)
         // Create new manager instance
         const newManager = new BranchManager({
             fullName,
