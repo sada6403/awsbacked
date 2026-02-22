@@ -201,6 +201,21 @@ const getManagerDashboard = async (req, res) => {
         const manager = await BranchManager.findById(req.user._id).lean();
         const walletBalance = manager?.walletBalance || 0;
 
+        // --- ADD RECENT MEMBERS FOR MANAGER DASHBOARD ---
+        const userOid = new mongoose.Types.ObjectId(req.user._id);
+        const [recentMgrMembers, recentExtMembers] = await Promise.all([
+            ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).limit(10).lean(),
+            ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).limit(10).lean()
+        ]);
+
+        const recentManagerMembers = [...recentMgrMembers, ...recentExtMembers]
+            .sort((a, b) => {
+                const dateA = new Date(a.createdAt || a.collectedAt || 0);
+                const dateB = new Date(b.createdAt || b.collectedAt || 0);
+                return dateB - dateA;
+            })
+            .slice(0, 10);
+
         res.json({
             success: true,
             data: {
@@ -215,6 +230,7 @@ const getManagerDashboard = async (req, res) => {
                 fieldVisitors: fieldVisitorStats,
                 notifications, // Include recent notifications
                 unreadNotificationsCount, // Include total unread count
+                recentManagerMembers, // --- ADDED FOR MANAGER DASHBOARD LIST ---
                 pie,
                 barChart
             }
