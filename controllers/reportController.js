@@ -163,6 +163,31 @@ const getManagerDashboard = async (req, res) => {
             .sort((a, b) => new Date(b.createdAt || b.collectedAt || 0) - new Date(a.createdAt || a.collectedAt || 0))
             .slice(0, 10);
 
+        // Prepare pie chart (branch distribution)
+        const pie = {
+            total: totalBranchAmount,
+            slices: fieldVisitorStats.map(fv => ({
+                label: fv.name,
+                value: fv.totalAmount,
+                userId: fv.userId
+            }))
+        };
+
+        // Prepare bar chart (monthly analysis)
+        const barChart = Array.from({ length: 12 }, (_, i) => ({
+            month: i + 1,
+            buy: 0,
+            sell: 0
+        }));
+
+        monthlyData.forEach(item => {
+            const mIdx = item._id.month - 1;
+            if (mIdx >= 0 && mIdx < 12) {
+                if (item._id.type === 'buy') barChart[mIdx].buy = item.totalAmount;
+                else if (item._id.type === 'sell') barChart[mIdx].sell = item.totalAmount;
+            }
+        });
+
         res.json({
             success: true,
             data: {
