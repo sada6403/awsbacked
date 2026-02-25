@@ -14,10 +14,11 @@ router.get('/dashboard-stats', protect, getDashboardStats);
 
 // Backward-compatible single dashboard endpoint that routes by role
 router.get('/dashboard', protect, (req, res, next) => {
-	if (req.user?.role === 'manager') {
+	const role = req.user?.role;
+	if (role === 'manager' || role === 'branch_manager') {
 		return getManagerDashboard(req, res, next);
 	}
-	if (req.user?.role === 'field_visitor') {
+	if (role === 'field_visitor') {
 		return getFieldVisitorDashboard(req, res, next);
 	}
 	return res.status(403).json({ success: false, message: 'Role not authorized for dashboard' });

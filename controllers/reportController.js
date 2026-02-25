@@ -45,7 +45,7 @@ const getManagerDashboard = async (req, res) => {
             manager,
             monthlyData
         ] = await Promise.all([
-            FieldVisitor.find({ branchId }).lean(),
+            FieldVisitor.find(branchMatch).lean(),
             Transaction.aggregate([
                 { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
                 {
@@ -57,7 +57,7 @@ const getManagerDashboard = async (req, res) => {
                 }
             ]),
             // Members count (combined)
-            FieldVisitor.find({ branchId }).select('_id').then(visitors => {
+            FieldVisitor.find(branchMatch).select('_id').then(visitors => {
                 const visitorIds = visitors.map(v => v._id);
                 visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
                 return Promise.all([
@@ -72,7 +72,7 @@ const getManagerDashboard = async (req, res) => {
                 ]);
             }),
             // Leads
-            FieldVisitor.find({ branchId }).select('_id').then(visitors => {
+            FieldVisitor.find(branchMatch).select('_id').then(visitors => {
                 const visitorIds = visitors.map(v => v._id);
                 visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
                 return ExtraMember.aggregate([
@@ -630,20 +630,20 @@ const getDashboardStats = async (req, res) => {
         // If manager, we also want the list of field visitors for the dashboard
         let fieldVisitors = [];
         if (isManager) {
-            const fvs = await FieldVisitor.find({ branchId }).lean();
+            const fvs = await FieldVisitor.find(branchMatch).lean();
             const [fvAggregation, fvMemberCounts, fvExtraCounts] = await Promise.all([
                 Transaction.aggregate([
-                    { $match: { branchId, date: { $gte: startOfMonth, $lte: endOfMonth } } },
+                    { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
                     { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' }, transactionCount: { $sum: 1 } } }
                 ]),
                 Member.aggregate([
-                    { $match: { branchId } },
+                    { $match: { ...branchMatch } },
                     { $group: { _id: '$fieldVisitorId', count: { $sum: 1 } } }
                 ]),
                 ExtraMember.aggregate([
                     {
                         $match: {
-                            branchId,
+                            ...branchMatch,
                             $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }]
                         }
                     },
