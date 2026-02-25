@@ -11,7 +11,7 @@ const TransactionSchema = new mongoose.Schema({
     unitType: { type: String, required: true },
     unitPrice: { type: Number, required: true },
     totalAmount: { type: Number, required: true },
-    date: { type: Date, default: Date.now },
+    date: { type: Date, default: Date.now, index: true },
     branchId: { type: String, required: true, default: 'default-branch', index: true },
     pdfUrl: { type: String } // Path to generated PDF
 }, { timestamps: true });

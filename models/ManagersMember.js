@@ -18,7 +18,7 @@ const ManagersMemberSchema = new mongoose.Schema({
     registrationFeePaid: { type: Boolean, default: false },
     pdfUrl: { type: String },
     isFirstTransactionDone: { type: Boolean, default: false },
-    createdAt: { type: Date, default: Date.now }
+    createdAt: { type: Date, default: Date.now, index: true }
 });
 
 module.exports = mongoose.model('ManagersMember', ManagersMemberSchema, 'managermember');

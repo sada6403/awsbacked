@@ -15,30 +15,99 @@ const branchFilter = (user) => ({ branchId: user.branchId || 'default-branch' })
 // @route GET /api/reports/manager-dashboard
 const getManagerDashboard = async (req, res) => {
     try {
-        const branchId = req.user?.branchId || 'default-branch';
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
 
-        // Pull all field visitors for the branch
-        const fieldVisitors = await FieldVisitor.find({ branchId }).lean();
+        // Sanitize branchId for robust matching
+        const branchId = (req.user?.branchId || 'default-branch').toLowerCase();
 
-        // Contribution per field visitor from current month transactions
-        const contributions = await Transaction.aggregate([
-            { $match: { branchId, date: { $gte: startOfMonth, $lte: endOfMonth } } },
-            {
-                $group: {
-                    _id: { fieldVisitorId: '$fieldVisitorId', type: '$type' },
-                    totalAmount: { $sum: '$totalAmount' },
-                    transactionCount: { $sum: 1 }
+        // Broaden branchId search to handle case inconsistencies or default-branch legacy data
+        const branchMatch = {
+            $or: [
+                { branchId: branchId },
+                { branchId: branchId.toUpperCase() },
+                { branchId: 'default-branch' }
+            ]
+        };
+
+        // Efficiently fetch all branch data in parallel
+        const [
+            fieldVisitors,
+            contributions,
+            [extraMemberCounts, centralMemberCounts],
+            leadCounts,
+            managerMemberCounts,
+            notifications,
+            unreadNotificationsCount,
+            manager,
+            monthlyData
+        ] = await Promise.all([
+            FieldVisitor.find({ branchId }).lean(),
+            Transaction.aggregate([
+                { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
+                {
+                    $group: {
+                        _id: { fieldVisitorId: '$fieldVisitorId', type: '$type' },
+                        totalAmount: { $sum: '$totalAmount' },
+                        transactionCount: { $sum: 1 }
+                    }
                 }
-            }
+            ]),
+            // Members count (combined)
+            FieldVisitor.find({ branchId }).select('_id').then(visitors => {
+                const visitorIds = visitors.map(v => v._id);
+                visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
+                return Promise.all([
+                    ExtraMember.aggregate([
+                        { $match: { collectedBy: { $in: visitorIds }, memberCode: { $exists: true, $ne: null, $ne: '' } } },
+                        { $group: { _id: '$collectedBy', memberCount: { $sum: 1 } } }
+                    ]),
+                    Member.aggregate([
+                        { $match: { fieldVisitorId: { $in: visitorIds } } },
+                        { $group: { _id: '$fieldVisitorId', memberCount: { $sum: 1 } } }
+                    ])
+                ]);
+            }),
+            // Leads
+            FieldVisitor.find({ branchId }).select('_id').then(visitors => {
+                const visitorIds = visitors.map(v => v._id);
+                visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
+                return ExtraMember.aggregate([
+                    {
+                        $match: {
+                            collectedBy: { $in: visitorIds },
+                            $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }]
+                        }
+                    },
+                    { $group: { _id: '$collectedBy', leadCount: { $sum: 1 } } }
+                ]);
+            }),
+            // Manager's own
+            ManagersMember.aggregate([
+                { $match: { addedBy: new mongoose.Types.ObjectId(req.user._id) } },
+                { $group: { _id: '$addedBy', count: { $sum: 1 } } }
+            ]),
+            Notification.find({ userId: req.user._id }).sort({ date: -1 }).limit(10).lean(),
+            Notification.countDocuments({ userId: req.user._id, isRead: false }),
+            BranchManager.findById(req.user._id).lean(),
+            Transaction.aggregate([
+                { $match: { ...branchMatch, date: { $gte: startOfYear, $lte: endOfYear } } },
+                {
+                    $group: {
+                        _id: { month: { $month: '$date' }, type: '$type' },
+                        totalAmount: { $sum: '$totalAmount' }
+                    }
+                },
+                { $sort: { '_id.month': 1 } }
+            ])
         ]);
 
+        const contributionMap = new Map();
         let branchBuyAmount = 0;
         let branchSellAmount = 0;
-
-        const contributionMap = new Map();
 
         contributions.forEach(c => {
             const fvId = c._id.fieldVisitorId?.toString();
@@ -53,77 +122,15 @@ const getManagerDashboard = async (req, res) => {
             else if (c._id.type === 'sell') branchSellAmount += c.totalAmount;
         });
 
-        // Member counts per field visitor (using ExtraMember)
-        const visitors = await FieldVisitor.find({ branchId }).select('_id');
-        const visitorIds = visitors.map(v => v._id);
-        // Include branch manager themselves
-        visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
-
-        console.log('DEBUG: Aggregating members for dashboard... Visitors:', visitorIds.length);
-
-        // Use Promise.all to fetch counts from both collections
-        const [extraMemberCounts, centralMemberCounts] = await Promise.all([
-            ExtraMember.aggregate([
-                {
-                    $match: {
-                        collectedBy: { $in: visitorIds },
-                        memberCode: { $exists: true, $ne: null, $ne: '' } // Confirmed Members
-                    }
-                },
-                { $group: { _id: '$collectedBy', memberCount: { $sum: 1 } } }
-            ]),
-            Member.aggregate([
-                {
-                    $match: {
-                        fieldVisitorId: { $in: visitorIds }
-                    }
-                },
-                { $group: { _id: '$fieldVisitorId', memberCount: { $sum: 1 } } }
-            ])
-        ]);
-
-        // Merge counts (Member records are the primary source now, but ExtraMember might still have some)
-        // Since we upsert from ExtraMember to Member, there might be duplicates if we count both.
-        // Actually, for scratch registrations, they are ONLY in Member.
-        // For leads-turned-members, they are in BOTH, but with same data (mobile).
-        // To be safe, let's just count from Member collection for "Confirmed Members" and ExtraMember for "Leads".
-        // Is every registered member in 'Member'? Yes,upserted.
-        const memberCounts = centralMemberCounts;
-
-        const leadCounts = await ExtraMember.aggregate([
-            {
-                $match: {
-                    collectedBy: { $in: visitorIds },
-                    $or: [
-                        { memberCode: { $exists: false } },
-                        { memberCode: null },
-                        { memberCode: '' }
-                    ]
-                }
-            },
-            { $group: { _id: '$collectedBy', leadCount: { $sum: 1 } } }
-        ]);
-
-        // Aggregate Manager's own members (from ManagersMember / extramember collection)
-        const managerMemberCounts = await ManagersMember.aggregate([
-            { $match: { addedBy: { $in: visitorIds } } },
-            { $group: { _id: '$addedBy', count: { $sum: 1 } } }
-        ]);
-
-        // const contributionMap = handled above
-        const memberMap = new Map(memberCounts.map(m => [m._id?.toString(), m.memberCount]));
+        const memberMap = new Map(centralMemberCounts.map(m => [m._id?.toString(), m.memberCount]));
         const leadMap = new Map(leadCounts.map(l => [l._id?.toString(), l.leadCount]));
         const managerMap = new Map(managerMemberCounts.map(m => [m._id?.toString(), m.count]));
 
         const fieldVisitorStats = fieldVisitors.map(fv => {
             const key = fv._id.toString();
             const contrib = contributionMap.get(key) || { totalAmount: 0, transactionCount: 0 };
-
-            // For Manager (req.user), add counts from ManagersMember
             let totalMembers = memberMap.get(key) || 0;
-            if (key === req.user._id.toString()) {
-                totalMembers += (managerMap.get(key) || 0);
-            }
+            if (key === req.user._id.toString()) totalMembers += (managerMap.get(key) || 0);
 
             return {
                 _id: fv._id,
@@ -133,87 +140,27 @@ const getManagerDashboard = async (req, res) => {
                 email: fv.email,
                 address: fv.postalAddress || fv.permanentAddress || 'N/A',
                 totalAmount: contrib.totalAmount,
-                amount: contrib.totalAmount, // Added 'amount' key for Flutter compatibility (Manager Dashboard)
+                amount: contrib.totalAmount,
                 transactionCount: contrib.transactionCount,
                 memberCount: totalMembers,
                 leadCount: leadMap.get(key) || 0
             };
         }).sort((a, b) => b.totalAmount - a.totalAmount);
 
+        const walletBalance = manager?.walletBalance || 0;
         const totalBranchAmount = fieldVisitorStats.reduce((sum, fv) => sum + fv.totalAmount, 0);
         const totalTransactions = fieldVisitorStats.reduce((sum, fv) => sum + fv.transactionCount, 0);
         const totalMembers = fieldVisitorStats.reduce((sum, fv) => sum + fv.memberCount, 0);
-
-        // Calculate the Manager's own members count for the "Add Member" tile
         const managersMemberCount = managerMap.get(req.user._id.toString()) || 0;
 
-        const pie = {
-            total: totalBranchAmount,
-            slices: fieldVisitorStats.map(fv => ({
-                label: fv.name || fv.userId,
-                value: fv.totalAmount,
-                fieldVisitorId: fv._id,
-                userId: fv.userId
-            }))
-        };
-
-        // Bar chart: monthly totals for current year
-        const startOfYear = new Date(now.getFullYear(), 0, 1);
-        const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
-
-        const monthlyData = await Transaction.aggregate([
-            { $match: { branchId, date: { $gte: startOfYear, $lte: endOfYear } } },
-            {
-                $group: {
-                    _id: { month: { $month: '$date' }, type: '$type' },
-                    totalAmount: { $sum: '$totalAmount' }
-                }
-            },
-            { $sort: { '_id.month': 1 } }
-        ]);
-
-        const barChart = Array.from({ length: 12 }, (_, i) => ({
-            month: i + 1,
-            buy: 0,
-            sell: 0
-        }));
-
-        monthlyData.forEach(item => {
-            const monthIndex = item._id.month - 1;
-            if (item._id.type === 'buy') {
-                barChart[monthIndex].buy = item.totalAmount;
-            } else if (item._id.type === 'sell') {
-                barChart[monthIndex].sell = item.totalAmount;
-            }
-        });
-
-        // Fetch notifications for the manager
-        const notifications = await Notification.find({ userId: req.user._id })
-            .sort({ date: -1 })
-            .limit(10)
-            .lean();
-
-        const unreadNotificationsCount = await Notification.countDocuments({
-            userId: req.user._id,
-            isRead: false
-        });
-
-        const manager = await BranchManager.findById(req.user._id).lean();
-        const walletBalance = manager?.walletBalance || 0;
-
-        // --- ADD RECENT MEMBERS FOR MANAGER DASHBOARD ---
-        const userOid = new mongoose.Types.ObjectId(req.user._id);
+        // Recent items (merged)
         const [recentMgrMembers, recentExtMembers] = await Promise.all([
-            ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).limit(10).lean(),
-            ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).limit(10).lean()
+            ManagersMember.find({ addedBy: req.user._id }).sort({ createdAt: -1 }).limit(10).lean(),
+            ExtraMember.find({ collectedBy: req.user._id }).sort({ collectedAt: -1 }).limit(10).lean()
         ]);
 
         const recentManagerMembers = [...recentMgrMembers, ...recentExtMembers]
-            .sort((a, b) => {
-                const dateA = new Date(a.createdAt || a.collectedAt || 0);
-                const dateB = new Date(b.createdAt || b.collectedAt || 0);
-                return dateB - dateA;
-            })
+            .sort((a, b) => new Date(b.createdAt || b.collectedAt || 0) - new Date(a.createdAt || a.collectedAt || 0))
             .slice(0, 10);
 
         res.json({
@@ -245,7 +192,22 @@ const getManagerDashboard = async (req, res) => {
 // @route GET /api/reports/field-visitor-dashboard
 const getFieldVisitorDashboard = async (req, res) => {
     try {
-        const branchId = req.user?.branchId || 'default-branch';
+        // Sanitize branchId for robust matching
+        const branchId = (req.user?.branchId || 'default-branch').toLowerCase();
+
+        // Broaden branchId search to handle case inconsistencies or default-branch legacy data
+        const branchMatch = {
+            $or: [
+                { branchId: branchId },
+                { branchId: branchId.toUpperCase() },
+                { branchId: 'default-branch' }
+            ]
+        };
+
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
         let fieldVisitorId = req.user?._id;
         if (fieldVisitorId) fieldVisitorId = new mongoose.Types.ObjectId(fieldVisitorId);
 
@@ -255,7 +217,7 @@ const getFieldVisitorDashboard = async (req, res) => {
 
         // Get BUY and SELL totals separately for accurate dashboard
         const transactionBreakdown = await Transaction.aggregate([
-            { $match: { branchId, fieldVisitorId } },
+            { $match: { ...branchMatch, fieldVisitorId } },
             {
                 $group: {
                     _id: '$type',
@@ -280,17 +242,8 @@ const getFieldVisitorDashboard = async (req, res) => {
             }
         });
 
-        const fvTotals = {
-            totalAmount: buyTotal + sellTotal,
-            transactionCount: buyCount + sellCount,
-            buyTotal,
-            sellTotal,
-            buyCount,
-            sellCount
-        };
-
         // Latest transactions for this field visitor
-        const transactions = await Transaction.find({ branchId, fieldVisitorId })
+        const transactions = await Transaction.find({ ...branchMatch, fieldVisitorId })
             .sort({ date: -1 })
             .limit(50)
             .populate('memberId', 'name mobile memberCode branchId')
@@ -328,103 +281,90 @@ const getFieldVisitorDashboard = async (req, res) => {
             }
         }
 
-        const notes = await Note.find({ fieldVisitorId })
-            .sort({ createdAt: -1 })
-            .limit(50)
-            .lean();
-
-        // Get current month date range for pie charts
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-
-        const buyAmountBreakdown = await Transaction.aggregate([
-            {
-                $match: {
-                    branchId,
-                    type: 'buy',
-                    date: { $gte: startOfMonth, $lte: endOfMonth }
+        // Efficiently fetch all visitor data in parallel
+        const [
+            visitorData, // renamed to avoid conflict if any
+            totals,
+            notes,
+            buyAmountBreakdown,
+            sellAmountBreakdown,
+            branchAgg,
+            branchFieldVisitors,
+            totalMembers,
+            unreadNotificationsCount,
+            monthlyLeads,
+            annualLeads
+        ] = await Promise.all([
+            FieldVisitor.findById(fieldVisitorId).lean(),
+            Transaction.aggregate([
+                { $match: { fieldVisitorId } },
+                { $group: { _id: '$type', totalAmount: { $sum: '$totalAmount' } } }
+            ]),
+            Note.find({ fieldVisitorId }).sort({ createdAt: -1 }).limit(50).lean(),
+            Transaction.aggregate([
+                {
+                    $match: {
+                        ...branchMatch,
+                        type: 'buy',
+                        date: { $gte: startOfMonth, $lte: endOfMonth }
+                    }
+                },
+                { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
+            ]),
+            Transaction.aggregate([
+                {
+                    $match: {
+                        ...branchMatch,
+                        type: 'sell',
+                        date: { $gte: startOfMonth, $lte: endOfMonth }
+                    }
+                },
+                { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
+            ]),
+            Transaction.aggregate([
+                { $match: { ...branchMatch } },
+                { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
+            ]),
+            FieldVisitor.find({ branchId }).lean(),
+            Member.countDocuments({ fieldVisitorId }),
+            Notification.countDocuments({ userId: fieldVisitorId, isRead: false }),
+            ExtraMember.countDocuments({
+                collectedBy: fieldVisitorId,
+                collectedAt: { $gte: startOfMonth, $lte: endOfMonth }
+            }),
+            ExtraMember.countDocuments({
+                collectedBy: fieldVisitorId,
+                collectedAt: {
+                    $gte: new Date(new Date().getFullYear(), 0, 1),
+                    $lte: new Date(new Date().getFullYear(), 11, 31, 23, 59, 59)
                 }
-            },
-            {
-                $group: {
-                    _id: '$fieldVisitorId',
-                    totalAmount: { $sum: '$totalAmount' }
-                }
-            }
+            })
         ]);
+
+        const fvTotalsFinal = { buy: 0, sell: 0 };
+        totals.forEach(t => {
+            if (t._id === 'buy') fvTotalsFinal.buy = t.totalAmount;
+            else if (t._id === 'sell') fvTotalsFinal.sell = t.totalAmount;
+        });
+
+        const walletBalanceResult = visitorData?.walletBalance || 0;
 
         let buyThisVisitor = 0;
         let buyOthers = 0;
-        const buyMap = new Map(buyAmountBreakdown.map(b => [b._id?.toString(), b.totalAmount]));
-
-        buyMap.forEach((qty, fvId) => {
-            if (fvId === fieldVisitorId.toString()) {
-                buyThisVisitor = qty;
-            } else {
-                buyOthers += qty;
-            }
+        buyAmountBreakdown.forEach(item => {
+            if (item._id?.toString() === fieldVisitorId.toString()) buyThisVisitor = item.totalAmount;
+            else buyOthers += item.totalAmount;
         });
-
-        const sellAmountBreakdown = await Transaction.aggregate([
-            {
-                $match: {
-                    branchId,
-                    type: 'sell',
-                    date: { $gte: startOfMonth, $lte: endOfMonth }
-                }
-            },
-            {
-                $group: {
-                    _id: '$fieldVisitorId',
-                    totalAmount: { $sum: '$totalAmount' }
-                }
-            }
-        ]);
 
         let sellThisVisitor = 0;
         let sellOthers = 0;
-        const sellMap = new Map(sellAmountBreakdown.map(s => [s._id?.toString(), s.totalAmount]));
-
-        sellMap.forEach((qty, fvId) => {
-            if (fvId === fieldVisitorId.toString()) {
-                sellThisVisitor = qty;
-            } else {
-                sellOthers += qty;
-            }
+        sellAmountBreakdown.forEach(item => {
+            if (item._id?.toString() === fieldVisitorId.toString()) sellThisVisitor = item.totalAmount;
+            else sellOthers += item.totalAmount;
         });
 
-        // Buy pie chart data
-        const buyPieChart = {
-            thisVisitor: buyThisVisitor,
-            others: buyOthers,
-            total: buyThisVisitor + buyOthers,
-            slices: [
-                { label: 'This Visitor', value: buyThisVisitor },
-                { label: 'Others', value: buyOthers }
-            ]
-        };
-
-        // Sell pie chart data
-        const sellPieChart = {
-            thisVisitor: sellThisVisitor,
-            others: sellOthers,
-            total: sellThisVisitor + sellOthers,
-            slices: [
-                { label: 'This Visitor', value: sellThisVisitor },
-                { label: 'Others', value: sellOthers }
-            ]
-        };
-
-        // Branch pie breakdown (overall contribution)
-        const branchAgg = await Transaction.aggregate([
-            { $match: { branchId } },
-            { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
-        ]);
         const branchTotal = branchAgg.reduce((sum, item) => sum + item.totalAmount, 0);
         const fvMap = new Map(branchAgg.map(i => [i._id?.toString(), i.totalAmount]));
-        const branchFieldVisitors = await FieldVisitor.find({ branchId }).lean();
-
         const branchPie = {
             total: branchTotal,
             slices: branchFieldVisitors.map(fv => ({
@@ -435,39 +375,30 @@ const getFieldVisitorDashboard = async (req, res) => {
             }))
         };
 
-        // Get exact member count for Promotion Journey
-        const totalMembers = await Member.countDocuments({ fieldVisitorId });
-
-        const unreadNotificationsCount = await Notification.countDocuments({
-            userId: fieldVisitorId,
-            isRead: false
-        });
-
-        // Added for Targets and Wallet
-        const monthlyLeads = await ExtraMember.countDocuments({
-            collectedBy: fieldVisitorId,
-            collectedAt: { $gte: startOfMonth, $lte: endOfMonth }
-        });
-
-        const annualLeads = await ExtraMember.countDocuments({
-            collectedBy: fieldVisitorId,
-            collectedAt: {
-                $gte: new Date(new Date().getFullYear(), 0, 1),
-                $lte: new Date(new Date().getFullYear(), 11, 31, 23, 59, 59)
-            }
-        });
+        // For debugging missing amounts
+        if (fvTotalsFinal.buy === 0 && fvTotalsFinal.sell === 0) {
+            console.log(`[DEBUG] No transactions found for FV ${fieldVisitorId} in branch ${branchId}`);
+        }
 
         res.json({
             success: true,
             data: {
                 branchId,
-                totals: fvTotals,
-                walletBalance,
+                totals: fvTotalsFinal,
+                walletBalance: walletBalanceResult,
                 totalMembers,
                 monthlyLeads,
                 annualLeads,
-                buyPieChart,
-                sellPieChart,
+                buyPieChart: {
+                    thisVisitor: buyThisVisitor,
+                    others: buyOthers,
+                    total: buyThisVisitor + buyOthers
+                },
+                sellPieChart: {
+                    thisVisitor: sellThisVisitor,
+                    others: sellOthers,
+                    total: sellThisVisitor + sellOthers
+                },
                 branchPie,
                 transactions,
                 notifications,
@@ -531,13 +462,13 @@ const getYearlyAnalysis = async (req, res) => {
 // @access Private
 const getDashboardStats = async (req, res) => {
     try {
-        const branchId = req.user?.branchId || 'default-branch';
         const isManager = req.user?.role === 'manager' || req.user?.role === 'branch_manager';
         let userId = req.user?._id;
+        if (userId) userId = new mongoose.Types.ObjectId(userId);
 
-        if (userId) {
-            userId = new mongoose.Types.ObjectId(userId);
-        }
+        const now = new Date();
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
 
         // Fetch Field Visitor info for wallet balance (needed for Rs.0.00 fix)
         let walletBalance = 0;
@@ -546,14 +477,24 @@ const getDashboardStats = async (req, res) => {
             walletBalance = visitor?.walletBalance || 0;
         }
 
-        // Get current month's date range
-        const now = new Date();
+        // Sanitize branchId for robust matching (fallback to lowercase, then check UPPER if needed)
+        const branchId = (req.user?.branchId || 'default-branch').toLowerCase();
+
+        // 1. Transaction Filter (Monthly)
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-        // Build transaction filter
+        // Broaden branchId search to handle case inconsistencies or default-branch legacy data
+        const branchMatch = {
+            $or: [
+                { branchId: branchId },
+                { branchId: branchId.toUpperCase() },
+                { branchId: 'default-branch' }
+            ]
+        };
+
         const txFilter = {
-            branchId,
+            ...branchMatch,
             date: { $gte: startOfMonth, $lte: endOfMonth }
         };
 
@@ -562,113 +503,12 @@ const getDashboardStats = async (req, res) => {
             txFilter.fieldVisitorId = userId;
         }
 
-        // Get BUY and SELL totals for current month
-        const monthlyBreakdown = await Transaction.aggregate([
-            { $match: txFilter },
-            {
-                $group: {
-                    _id: '$type',
-                    totalAmount: { $sum: '$totalAmount' }
-                }
-            }
-        ]);
-
-        let buyAmount = 0;
-        let sellAmount = 0;
-
-        monthlyBreakdown.forEach(item => {
-            if (item._id === 'buy') {
-                buyAmount = item.totalAmount;
-            } else if (item._id === 'sell') {
-                sellAmount = item.totalAmount;
-            }
-        });
-
-        // Get total members count
-        let totalMembers = 0;
-        if (isManager) {
-            // Manager sees counts from ALL their FVs + their OWN registered members (from ManagersMember collection)
-            const FieldVisitor = require('../models/FieldVisitor');
-            const visitors = await FieldVisitor.find({ branchId }).select('_id');
-            const visitorIds = visitors.map(v => v._id);
-            // In addition to members in the central 'Member' collection linked to these visitors...
-            const memberCountFromMembers = await Member.countDocuments({
-                fieldVisitorId: { $in: visitorIds }
-            });
-
-            // ...also include members they've personally added that might not be in the central collection yet (or are in ManagersMember)
-            const managerDirectMembers = await ManagersMember.countDocuments({ addedBy: userId });
-
-            // Note: Since we sync to 'Member' collection, there might be overlap. 
-            // But 'view member' shows 0 total. This is likely because they aren't in 'Member' with a valid FV ID.
-            // By summing, we represent the total impact.
-            totalMembers = memberCountFromMembers + managerDirectMembers;
-        } else {
-            // Field Visitor sees only their own members from central collection
-            totalMembers = await Member.countDocuments({
-                fieldVisitorId: userId
-            });
-        }
-
-        let extraMembersCount = totalMembers;
-        let recentExtraMembers = [];
-        const userOid = userId; // Already converted to ObjectId at line 523
-
-        if (isManager) {
-            const [mgrMembers, extMembers] = await Promise.all([
-                ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).limit(10).lean(),
-                ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).limit(10).lean()
-            ]);
-
-            // Merge and sort
-            recentExtraMembers = [...mgrMembers, ...extMembers]
-                .sort((a, b) => {
-                    const dateA = a.createdAt || a.collectedAt || 0;
-                    const dateB = b.createdAt || b.collectedAt || 0;
-                    return new Date(dateB) - new Date(dateA);
-                })
-                .slice(0, 10);
-        } else {
-            recentExtraMembers = await ExtraMember.find({ collectedBy: userOid })
-                .sort({ collectedAt: -1 })
-                .limit(10)
-                .lean();
-        }
-
-        // Get recent transactions
-        const recentTxFilter = { branchId };
-        if (!isManager) {
-            recentTxFilter.fieldVisitorId = userId;
-        }
-        const transactions = await Transaction.find(recentTxFilter)
-            .sort({ date: -1 })
-            .limit(10)
-            .populate('memberId', 'fullName name mobile')
-            .lean();
-
-        // Get notifications (personal to the user)
-        const notificationFilter = { userId: req.user._id };
-        const notifications = await Notification.find(notificationFilter)
-            .sort({ date: -1 })
-            .limit(10)
-            .lean();
-
-        // Get total unread count (User requested perfect count)
-        const unreadNotificationsCount = await Notification.countDocuments({
-            ...notificationFilter,
-            isRead: false
-        });
-
-        // Stats for pie charts (by quantity)
-        // If not manager, strictly filter pie data to this user (hide 'Others')
-        const pieMatch = {
-            branchId,
-            // date: { $gte: startOfMonth, $lte: endOfMonth }
-        };
+        // Stats for pie charts
+        const pieMatch = { ...branchMatch };
 
         // Date matching for strict current month filtering (matching memberController logic)
         const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth() + 1; // MongoDB $month is 1-indexed
+        const currentMonth = now.getMonth() + 1; // MongoDB $month is 1-indexed (Jan=1)
 
         const dateMatch = {
             $expr: {
@@ -678,84 +518,99 @@ const getDashboardStats = async (req, res) => {
                 ]
             }
         };
-        if (!isManager) {
-            // pieMatch.fieldVisitorId = userId; // Allow seeing others for comparison
-        }
 
-        const buyAmountBreakdown = await Transaction.aggregate([
-            {
-                $match: {
-                    ...pieMatch,
-                    type: 'buy',
-                    ...dateMatch
+        console.log(`[getDashboardStats] User: ${userId} (${req.user?.role}) Branch: ${branchId} Month: ${currentMonth}`);
+
+        // Efficiently fetch all required counts and data in parallel
+        const [
+            monthlyBreakdown,
+            notifications,
+            unreadNotificationsCount,
+            buyAmountBreakdown,
+            sellAmountBreakdown,
+            monthlyLeads,
+            totalLeads,
+            annualLeads,
+            managersMemberCount,
+            totalTransactionsCount
+        ] = await Promise.all([
+            // 1. Monthly Transaction Breakdown
+            Transaction.aggregate([
+                { $match: txFilter },
+                { $group: { _id: '$type', totalAmount: { $sum: '$totalAmount' } } }
+            ]),
+            // 2. Recent Notifications
+            Notification.find({ userId: req.user._id }).sort({ date: -1 }).limit(10).lean(),
+            // 3. Unread Notifications Count
+            Notification.countDocuments({ userId: req.user._id, isRead: false }),
+            // 4. Buy Amount Pie Breakdown
+            Transaction.aggregate([
+                { $match: { ...pieMatch, type: 'buy', ...dateMatch } },
+                { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
+            ]),
+            // 5. Sell Amount Pie Breakdown
+            Transaction.aggregate([
+                { $match: { ...pieMatch, type: 'sell', ...dateMatch } },
+                { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
+            ]),
+            // 6. Monthly Leads Count
+            ExtraMember.countDocuments({
+                collectedBy: userId,
+                collectedAt: { $gte: startOfMonth, $lte: endOfMonth }
+            }),
+            // 7. Total Lifetime Leads Count
+            ExtraMember.countDocuments({ collectedBy: userId }),
+            // 8. Annual Leads Count
+            ExtraMember.countDocuments({
+                collectedBy: userId,
+                collectedAt: {
+                    $gte: new Date(new Date().getFullYear(), 0, 1),
+                    $lte: new Date(new Date().getFullYear(), 11, 31, 23, 59, 59)
                 }
-            },
-            {
-                $group: {
-                    _id: '$fieldVisitorId',
-                    totalAmount: { $sum: '$totalAmount' }
-                }
-            }
+            }),
+            // 9. Manager's own member count
+            isManager
+                ? Promise.all([
+                    ManagersMember.countDocuments({ addedBy: userId }),
+                    ExtraMember.countDocuments({ collectedBy: userId, memberCode: { $ne: null, $ne: '' } })
+                ]).then(([a, b]) => a + b)
+                : Promise.resolve(0),
+            // 10. Total Transactions Count
+            isManager
+                ? Transaction.countDocuments({ branchId })
+                : Transaction.countDocuments({ fieldVisitorId: userId })
         ]);
+
+        let buyAmount = 0;
+        let sellAmount = 0;
+        monthlyBreakdown.forEach(item => {
+            if (item._id === 'buy') buyAmount = item.totalAmount;
+            else if (item._id === 'sell') sellAmount = item.totalAmount;
+        });
 
         let buyThisUser = 0;
         let buyOthers = 0;
-
         buyAmountBreakdown.forEach(item => {
-            const fvId = item._id?.toString();
-            if (fvId === userId.toString()) {
-                buyThisUser = item.totalAmount;
-            } else {
-                buyOthers += item.totalAmount;
-            }
+            if (item._id?.toString() === userId.toString()) buyThisUser = item.totalAmount;
+            else buyOthers += item.totalAmount;
         });
-
-        const sellAmountBreakdown = await Transaction.aggregate([
-            {
-                $match: {
-                    ...pieMatch,
-                    type: 'sell',
-                    ...dateMatch
-                }
-            },
-            {
-                $group: {
-                    _id: '$fieldVisitorId',
-                    totalAmount: { $sum: '$totalAmount' }
-                }
-            }
-        ]);
 
         let sellThisUser = 0;
         let sellOthers = 0;
-
         sellAmountBreakdown.forEach(item => {
-            const fvId = item._id?.toString();
-            if (fvId === userId.toString()) {
-                sellThisUser = item.totalAmount;
-            } else {
-                sellOthers += item.totalAmount;
-            }
+            if (item._id?.toString() === userId.toString()) sellThisUser = item.totalAmount;
+            else sellOthers += item.totalAmount;
         });
 
         // If manager, we also want the list of field visitors for the dashboard
         let fieldVisitors = [];
         if (isManager) {
             const fvs = await FieldVisitor.find({ branchId }).lean();
-
-            // Get stats per FV
-            const fvStats = await Transaction.aggregate([
-                { $match: { branchId, date: { $gte: startOfMonth, $lte: endOfMonth } } },
-                {
-                    $group: {
-                        _id: '$fieldVisitorId',
-                        totalAmount: { $sum: '$totalAmount' },
-                        transactionCount: { $sum: 1 }
-                    }
-                }
-            ]);
-
-            const [fvMemberCounts, fvExtraCounts] = await Promise.all([
+            const [fvAggregation, fvMemberCounts, fvExtraCounts] = await Promise.all([
+                Transaction.aggregate([
+                    { $match: { branchId, date: { $gte: startOfMonth, $lte: endOfMonth } } },
+                    { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' }, transactionCount: { $sum: 1 } } }
+                ]),
                 Member.aggregate([
                     { $match: { branchId } },
                     { $group: { _id: '$fieldVisitorId', count: { $sum: 1 } } }
@@ -764,29 +619,16 @@ const getDashboardStats = async (req, res) => {
                     {
                         $match: {
                             branchId,
-                            $or: [
-                                { memberCode: { $exists: false } },
-                                { memberCode: null },
-                                { memberCode: '' }
-                            ]
+                            $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }]
                         }
                     },
                     { $group: { _id: '$collectedBy', count: { $sum: 1 } } }
                 ])
             ]);
 
-            const statsMap = new Map(fvStats.map(s => [s._id?.toString(), s]));
-            const memberCountMap = new Map();
-            const leadCountMap = new Map();
-
-            fvMemberCounts.forEach(c => {
-                const id = c._id?.toString();
-                if (id) memberCountMap.set(id, c.count);
-            });
-            fvExtraCounts.forEach(c => {
-                const id = c._id?.toString();
-                if (id) leadCountMap.set(id, c.count);
-            });
+            const statsMap = new Map(fvAggregation.map(s => [s._id?.toString(), s]));
+            const memberCountMap = new Map(fvMemberCounts.map(c => [c._id?.toString(), c.count]));
+            const leadCountMap = new Map(fvExtraCounts.map(c => [c._id?.toString(), c.count]));
 
             fieldVisitors = fvs.map(fv => {
                 const s = statsMap.get(fv._id.toString()) || { totalAmount: 0, transactionCount: 0 };
@@ -798,7 +640,7 @@ const getDashboardStats = async (req, res) => {
                     userId: fv.userId,
                     phone: fv.phone,
                     email: fv.email,
-                    address: fv.postalAddress || fv.address || 'N/A', // Map address
+                    address: fv.postalAddress || fv.address || 'N/A',
                     amount: s.totalAmount,
                     totalAmount: s.totalAmount,
                     transactionCount: s.transactionCount,
@@ -806,14 +648,6 @@ const getDashboardStats = async (req, res) => {
                     leadCount: leadCountMap.get(fv._id.toString()) || 0
                 };
             });
-        }
-
-        // Get count of all transactions for this month/year for the branch (for managers)
-        let totalTransactionsCount = 0;
-        if (isManager) {
-            totalTransactionsCount = await Transaction.countDocuments({ branchId });
-        } else {
-            totalTransactionsCount = await Transaction.countDocuments({ fieldVisitorId: userId });
         }
 
         res.json({
@@ -837,8 +671,7 @@ const getDashboardStats = async (req, res) => {
                     others: sellOthers,
                     total: sellThisUser + sellOthers
                 },
-                // For both managers and field visitors, we now count from ExtraMember
-                totalMembers: totalMembers,
+                totalMembers,
                 extraMembersCount,
                 recentExtraMembers,
                 recentManagerMembers: isManager ? recentExtraMembers : [],
@@ -846,31 +679,11 @@ const getDashboardStats = async (req, res) => {
                 transactions,
                 notifications,
                 unreadNotificationsCount,
-                fieldVisitors, // Only populated for managers
-
-                // Monthly Leads Count
-                monthlyLeads: await ExtraMember.countDocuments({
-                    collectedBy: userId,
-                    collectedAt: { $gte: startOfMonth, $lte: endOfMonth }
-                }),
-
-                // Total Lifetime Leads Count
-                totalLeads: await ExtraMember.countDocuments({
-                    collectedBy: userId
-                }),
-
-                // Manager's own members (from both legacy ManagersMember and current ExtraMember/Member collections)
-                managersMemberCount: (await ManagersMember.countDocuments({ addedBy: userOid })) +
-                    (await ExtraMember.countDocuments({ collectedBy: userOid, memberCode: { $ne: null, $ne: '' } })),
-
-                // Annual Leads Count
-                annualLeads: await ExtraMember.countDocuments({
-                    collectedBy: userId,
-                    collectedAt: {
-                        $gte: new Date(new Date().getFullYear(), 0, 1),
-                        $lte: new Date(new Date().getFullYear(), 11, 31, 23, 59, 59)
-                    }
-                })
+                fieldVisitors,
+                monthlyLeads,
+                totalLeads,
+                managersMemberCount,
+                annualLeads
             }
         });
     } catch (error) {
