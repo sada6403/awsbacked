@@ -1,8 +1,12 @@
 node_modules/
 .env
 public/bills/*.pdf
+public/members/*.pdf
 *.bak
 coverage/
 npm-debug.log
 yarn-error.log
 .DS_Store
+debug_*.txt
+scripts/debug_*.js
+*.log

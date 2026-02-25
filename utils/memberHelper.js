@@ -7,6 +7,37 @@ const BranchManager = require('../models/BranchManager');
  * Format: FA[BranchCode][Sequence] (e.g., FAKA001)
  */
 async function generateMemberCode(branchId, userRole, userData) {
+    if (userRole === 'manager') {
+        const prefix = 'M-';
+
+        // Search across all possible locations for the sequence to ensure global uniqueness
+        const [lastManager, lastCentral] = await Promise.all([
+            require('../models/ManagersMember').findOne({
+                memberCode: { $regex: `^M-\\d+$` }
+            })
+                .sort({ memberCode: -1 })
+                .collation({ locale: "en", numericOrdering: true }),
+            Member.findOne({
+                memberCode: { $regex: `^M-\\d+$` }
+            })
+                .sort({ memberCode: -1 })
+                .collation({ locale: "en", numericOrdering: true })
+        ]);
+
+        let maxSeq = 0;
+        if (lastManager && lastManager.memberCode) {
+            const seq = parseInt(lastManager.memberCode.replace(prefix, ''), 10);
+            if (!isNaN(seq)) maxSeq = Math.max(maxSeq, seq);
+        }
+        if (lastCentral && lastCentral.memberCode) {
+            const seq = parseInt(lastCentral.memberCode.replace(prefix, ''), 10);
+            if (!isNaN(seq)) maxSeq = Math.max(maxSeq, seq);
+        }
+
+        const sequence = maxSeq + 1;
+        return `${prefix}${sequence.toString().padStart(6, '0')}`;
+    }
+
     let branchCode = 'XX';
     let branchNameStr = '';
 
@@ -29,13 +60,18 @@ async function generateMemberCode(branchId, userRole, userData) {
     }
 
     const prefix = `FA${branchCode}`;
-    const [lastExtra, lastCentral] = await Promise.all([
+    const [lastExtra, lastCentral, lastManager] = await Promise.all([
         ExtraMember.findOne({
             memberCode: { $regex: `^${prefix}\\d+$` }
         })
             .sort({ memberCode: -1 })
             .collation({ locale: "en", numericOrdering: true }),
         Member.findOne({
+            memberCode: { $regex: `^${prefix}\\d+$` }
+        })
+            .sort({ memberCode: -1 })
+            .collation({ locale: "en", numericOrdering: true }),
+        require('../models/ManagersMember').findOne({
             memberCode: { $regex: `^${prefix}\\d+$` }
         })
             .sort({ memberCode: -1 })
@@ -51,6 +87,11 @@ async function generateMemberCode(branchId, userRole, userData) {
 
     if (lastCentral && lastCentral.memberCode) {
         const seq = parseInt(lastCentral.memberCode.replace(prefix, ''), 10);
+        if (!isNaN(seq)) maxSeq = Math.max(maxSeq, seq);
+    }
+
+    if (lastManager && lastManager.memberCode) {
+        const seq = parseInt(lastManager.memberCode.replace(prefix, ''), 10);
         if (!isNaN(seq)) maxSeq = Math.max(maxSeq, seq);
     }
 
