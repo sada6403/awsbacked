@@ -5,6 +5,7 @@ const BranchManager = require('../models/BranchManager');
 const mongoose = require('mongoose');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
 const { generateMemberCode } = require('../utils/memberHelper');
+const { emitMemberEvent } = require('../utils/socketService');
 
 // @desc    Register a member
 // @route   POST /api/members
@@ -68,38 +69,49 @@ const registerMember = async (req, res, next) => {
             await newMember.save(); // Only save to ExtraMember if it was already a lead
         }
 
-        // Sync to central Member collection - ALWAYS do this
-        let savedMember; // This will hold the data to return
-        try {
-            const memberData = {
-                name,
-                address,
-                mobile,
-                email,
-                nic,
-                memberCode: generatedMemberCode,
-                fieldVisitorId: req.user?._id,
-                branchId,
-                area: req.user?.area || 'default-area',
-                registrationData,
-                registeredAt: new Date(),
-                profileImage,
-                memberType,
-                registrationFeePaid,
-                biometricData,
-                signatureImage,
-                idFrontImage,
-                idBackImage,
-                walletBalance: 0
-            };
-            savedMember = await Member.findOneAndUpdate(
-                { mobile: mobile },
-                memberData,
-                { upsert: true, new: true }
-            );
-        } catch (syncError) {
-            console.error('[Sync] Error:', syncError);
-            throw syncError; // Fail if central sync fails
+        // Sync to central Member collection - skip for managers
+        let savedMember = leadId ? await ExtraMember.findById(leadId) : null;
+        if (req.user?.role !== 'manager') {
+            try {
+                const memberData = {
+                    name,
+                    address,
+                    mobile,
+                    email,
+                    nic,
+                    memberCode: generatedMemberCode,
+                    fieldVisitorId: req.user?._id,
+                    branchId,
+                    area: req.user?.area || 'default-area',
+                    registrationData,
+                    registeredAt: new Date(),
+                    profileImage,
+                    memberType,
+                    registrationFeePaid,
+                    biometricData,
+                    signatureImage,
+                    idFrontImage,
+                    idBackImage,
+                    walletBalance: 0
+                };
+                savedMember = await Member.findOneAndUpdate(
+                    { mobile: mobile },
+                    memberData,
+                    { upsert: true, new: true }
+                );
+            } catch (syncError) {
+                console.error('[Sync] Error:', syncError);
+                throw syncError; // Fail if central sync fails
+            }
+        } else {
+            // For managers, if not already handled as lead, we might need a dummy savedMember object or handle response
+            // But based on current logic, if a manager calls this (unauthorized), we don't save to Member.
+            // If it was a lead (ExtraMember), it's already updated above.
+            if (!savedMember) {
+                // If it was not a lead and manager somehow accessed this, return early or handle as ExtraMember
+                // Given the requirement, managers only save to ManagersMember, but this endpoint is for FieldVisitors (ExtraMember/Member)
+                return res.status(403).json({ success: false, message: 'Managers should use the manager-specific registration endpoint' });
+            }
         }
 
         // Generate PDF
@@ -130,6 +142,9 @@ const registerMember = async (req, res, next) => {
         } catch (notifErr) {
             console.error('Notification Creation Error:', notifErr);
         }
+
+        // EMIT REAL-TIME UPDATE
+        emitMemberEvent('memberCreated', savedMember);
 
         res.status(201).json({
             success: true,
@@ -320,6 +335,9 @@ const updateMember = async (req, res) => {
         if (updates.registrationData) member.registrationData = { ...member.registrationData, ...updates.registrationData };
 
         const updatedMember = await member.save();
+
+        // EMIT REAL-TIME UPDATE
+        emitMemberEvent('memberUpdated', updatedMember);
 
         // If it's a registered member, we might need to sync back to Member if we updated ExtraMember?
         // Actually, the app usually updates via ID. 

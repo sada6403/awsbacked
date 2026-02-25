@@ -8,6 +8,7 @@ const BranchManager = require('../models/BranchManager');
 const { generateMemberCode } = require('../utils/memberHelper');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
 const { createAndSendNotification } = require('../utils/notificationHelper');
+const { emitMemberEvent } = require('../utils/socketService');
 
 // @desc    Send OTP for Member Registration
 // @route   POST /api/managers-members/send-otp
@@ -149,8 +150,8 @@ const verifyOtpsAndRegister = async (req, res) => {
             }
         }
 
-        // Check duplications
-        const orConditions = [{ mobile }];
+        // Check duplications (Mobile, Email, or NIC)
+        const orConditions = [{ mobile }, { nic }];
         if (email) orConditions.push({ email });
 
         const existingMember = await ManagersMember.findOne({
@@ -159,7 +160,7 @@ const verifyOtpsAndRegister = async (req, res) => {
         if (existingMember) {
             return res.status(409).json({
                 success: false,
-                message: 'Member already registered with this mobile number or email',
+                message: 'Member already registered with this mobile number, email, or NIC',
                 data: existingMember
             });
         }
@@ -182,34 +183,6 @@ const verifyOtpsAndRegister = async (req, res) => {
         });
 
         const savedMember = await newMember.save();
-
-        // --- SYNCHRONIZE TO CENTRAL MEMBER COLLECTION ---
-        try {
-            const Member = require('../models/Member');
-            const memberData = {
-                _id: savedMember._id,
-                name: savedMember.name,
-                address: savedMember.address,
-                mobile: savedMember.mobile,
-                email: savedMember.email,
-                nic: savedMember.nic,
-                memberCode: savedMember.memberCode,
-                fieldVisitorId: savedMember.addedBy, // Link to manager's ID for dashboard stats
-                branchId: savedMember.branchId,
-                area: 'Manager-Office',
-                registeredAt: savedMember.createdAt,
-            };
-
-            await Member.findOneAndUpdate(
-                { mobile: savedMember.mobile },
-                memberData,
-                { upsert: true, new: true }
-            );
-            console.log(`[Sync] Manager Member ${savedMember.mobile} synced with code ${savedMember.memberCode}.`);
-        } catch (syncError) {
-            console.error('[Sync] Failed:', syncError);
-        }
-        // ------------------------------------------------
 
         // Delete used OTPs
         await Otp.deleteMany({ identifier: { $in: [mobile, email] } });
@@ -240,6 +213,9 @@ const verifyOtpsAndRegister = async (req, res) => {
             console.error('Notification (Manager) Error:', notifErr);
         }
 
+        // EMIT REAL-TIME UPDATE
+        emitMemberEvent('memberCreated', savedMember);
+
         res.status(201).json({ success: true, message: 'Member registered successfully', data: savedMember, pdfUrl });
 
     } catch (error) {
@@ -248,7 +224,7 @@ const verifyOtpsAndRegister = async (req, res) => {
         if (error.code === 11000) {
             return res.status(409).json({
                 success: false,
-                message: 'Member with this mobile number or email already exists'
+                message: 'Member with this mobile number, email, or NIC already exists'
             });
         }
 
@@ -272,12 +248,14 @@ const registerMember = async (req, res) => {
         if (nic) nic = nic.trim().toUpperCase();
         if (mobile) mobile = mobile.replace(/\s+/g, '');
 
-        // Check duplications
-        const existingMember = await ManagersMember.findOne({ mobile });
+        // Check duplications (Mobile or NIC)
+        const existingMember = await ManagersMember.findOne({
+            $or: [{ mobile }, { nic }]
+        });
         if (existingMember) {
             return res.status(409).json({
                 success: false,
-                message: 'Member already registered with this mobile number',
+                message: 'Member already registered with this mobile number or NIC',
                 data: existingMember
             });
         }
@@ -302,34 +280,6 @@ const registerMember = async (req, res) => {
         });
 
         const savedMember = await newMember.save();
-
-        // --- SYNCHRONIZE TO CENTRAL MEMBER COLLECTION ---
-        try {
-            const Member = require('../models/Member');
-            const memberData = {
-                _id: savedMember._id,
-                name: savedMember.name,
-                address: savedMember.address,
-                mobile: savedMember.mobile,
-                email: savedMember.email,
-                nic: savedMember.nic,
-                memberCode: savedMember.memberCode,
-                fieldVisitorId: savedMember.addedBy, // Added for dashboard counts
-                idFrontImage: savedMember.idFrontImage,
-                idBackImage: savedMember.idBackImage,
-                branchId: savedMember.branchId,
-                area: 'Manager-Office',
-                registeredAt: savedMember.createdAt,
-            };
-
-            await Member.findOneAndUpdate(
-                { mobile: savedMember.mobile },
-                memberData,
-                { upsert: true, new: true }
-            );
-        } catch (syncError) {
-            console.error('[Sync] Failed:', syncError);
-        }
 
         // Generate PDF
         let pdfUrl = '';
@@ -357,6 +307,9 @@ const registerMember = async (req, res) => {
             console.error('Notification (Manager Legacy) Error:', notifErr);
         }
 
+        // EMIT REAL-TIME UPDATE
+        emitMemberEvent('memberCreated', savedMember);
+
         res.status(201).json({ success: true, message: 'Member registered successfully', data: savedMember, pdfUrl });
 
     } catch (error) {
@@ -365,7 +318,7 @@ const registerMember = async (req, res) => {
         if (error.code === 11000) {
             return res.status(409).json({
                 success: false,
-                message: 'Member with this mobile number already exists'
+                message: 'Member with this mobile number or NIC already exists'
             });
         }
 

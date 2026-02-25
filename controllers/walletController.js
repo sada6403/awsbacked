@@ -672,7 +672,7 @@ exports.approveCompanyTransfer = async (req, res) => {
         await user.save(queryOptions);
 
         // Update transfer status
-        transfer.status = 'approved';
+        transfer.status = 'accepted';
         await transfer.save(queryOptions);
 
         // Record wallet transaction
@@ -682,7 +682,7 @@ exports.approveCompanyTransfer = async (req, res) => {
             type: 'transfer_out',
             amount: Number(transfer.amount),
             balanceAfter: user.walletBalance,
-            reference: `Company Transfer Approved: ${transfer.depositorName} (${transfer.depositorNic})`
+            reference: `Company Transfer Accepted: ${transfer.depositorName} (${transfer.depositorNic})`
         });
         await txOut.save(queryOptions);
 
@@ -694,8 +694,8 @@ exports.approveCompanyTransfer = async (req, res) => {
         try {
             const { createAndSendNotification } = require('../utils/notificationHelper');
             await createAndSendNotification({
-                title: 'Transfer to Company Approved',
-                body: `Your transfer request of Rs. ${transfer.amount} has been approved and deducted from your wallet.`,
+                title: 'Transfer to Company Accepted',
+                body: `Your transfer request of Rs. ${transfer.amount} has been accepted and deducted from your wallet.`,
                 date: new Date(),
                 userId: user._id,
                 userRole: transfer.userRole,

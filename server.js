@@ -341,6 +341,10 @@ app.get('/', (req, res) => {
         console.log(`- Network: http://${localIp}:${PORT}`);
         console.log(`Access the API at http://${localIp}:${PORT}/api`);
     });
+
+    // Initialize Socket.io
+    const { initSocket } = require('./utils/socketService');
+    initSocket(server);
 })().catch((err) => {
     console.error(`Startup failure: ${err.message}`);
     process.exit(1);
