@@ -146,12 +146,20 @@ const registerFieldVisitor = async (req, res, next) => {
                     <div style="padding: 20px; border: 1px solid #ddd; border-top: none;">
                         <p>Dear ${name},</p>
                         <p>You have been successfully registered as a Field Visitor.</p>
-                        <p><strong>Your Credentails:</strong></p>
+                        <p><strong>Your Credentials:</strong></p>
                         <ul>
                             <li><strong>User ID:</strong> ${generatedUserId}</li>
                             <li><strong>Password:</strong> ${generatedPassword}</li>
                         </ul>
                         <p>Please keep these credentials safe.</p>
+                        <br>
+                        <div style="text-align: center; background-color: #f1f8e9; padding: 15px; border-radius: 8px; border: 1px dashed #2e7d32;">
+                            <p style="margin-top: 0;"><strong>Get Started:</strong> Download the mobile application to start your work.</p>
+                            <a href="https://drive.google.com/file/d/1qX7kcIdlUcvX6Kgyq6vIVUGRwAMa11bx/view?usp=sharing" 
+                               style="background-color: #2e7d32; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                               Download App
+                            </a>
+                        </div>
                         <br>
                         <p>Best Regards,<br>Nature Farming Team</p>
                     </div>
