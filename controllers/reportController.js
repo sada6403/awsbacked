@@ -429,6 +429,11 @@ const getFieldVisitorDashboard = async (req, res) => {
             data: {
                 branchId,
                 totals: fvTotalsFinal,
+                monthlyTotals: {
+                    buyAmount: buyThisVisitor,
+                    sellAmount: sellThisVisitor,
+                    totalAmount: buyThisVisitor + sellThisVisitor
+                },
                 walletBalance: walletBalanceResult,
                 totalMembers,
                 monthlyLeads,
