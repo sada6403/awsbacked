@@ -16,4 +16,8 @@ const TransactionSchema = new mongoose.Schema({
     pdfUrl: { type: String } // Path to generated PDF
 }, { timestamps: true });
 
+// Compound indexes for faster dashboard aggregations and reporting
+TransactionSchema.index({ branchId: 1, date: 1 });
+TransactionSchema.index({ fieldVisitorId: 1, date: 1 });
+
 module.exports = mongoose.model('Transaction', TransactionSchema);

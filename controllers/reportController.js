@@ -40,14 +40,8 @@ const getManagerDashboard = async (req, res) => {
         // Sanitize branchId for robust matching
         const branchId = (req.user?.branchId || 'default-branch').toLowerCase();
 
-        // Broaden branchId search to handle case inconsistencies or default-branch legacy data
-        const branchMatch = {
-            $or: [
-                { branchId: branchId },
-                { branchId: branchId.toUpperCase() },
-                { branchId: 'default-branch' }
-            ]
-        };
+        // Simplified branchMatch for better index performance
+        const branchMatch = { branchId: { $in: [branchId, branchId.toUpperCase(), 'default-branch'] } };
 
         const cacheKey = `manager_dash_${req.user._id}_${branchId}`;
         if (dashboardCache.has(cacheKey)) {
@@ -245,14 +239,8 @@ const getFieldVisitorDashboard = async (req, res) => {
         // Sanitize branchId for robust matching
         const branchId = (req.user?.branchId || 'default-branch').toLowerCase();
 
-        // Broaden branchId search to handle case inconsistencies or default-branch legacy data
-        const branchMatch = {
-            $or: [
-                { branchId: branchId },
-                { branchId: branchId.toUpperCase() },
-                { branchId: 'default-branch' }
-            ]
-        };
+        // Simplified branchMatch for better index performance
+        const branchMatch = { branchId: { $in: [branchId, branchId.toUpperCase(), 'default-branch'] } };
 
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -543,14 +531,8 @@ const getDashboardStats = async (req, res) => {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-        // Broaden branchId search to handle case inconsistencies or default-branch legacy data
-        const branchMatch = {
-            $or: [
-                { branchId: branchId },
-                { branchId: branchId.toUpperCase() },
-                { branchId: 'default-branch' }
-            ]
-        };
+        // Simplified branchMatch for better index performance
+        const branchMatch = { branchId: { $in: [branchId, branchId.toUpperCase(), 'default-branch'] } };
 
         const txFilter = {
             ...branchMatch,
@@ -569,13 +551,9 @@ const getDashboardStats = async (req, res) => {
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth() + 1; // MongoDB $month is 1-indexed (Jan=1)
 
+        // Use range matching instead of $expr to leverage compound indexes on 'date'
         const dateMatch = {
-            $expr: {
-                $and: [
-                    { $eq: [{ $year: '$date' }, currentYear] },
-                    { $eq: [{ $month: '$date' }, currentMonth] }
-                ]
-            }
+            date: { $gte: startOfMonth, $lte: endOfMonth }
         };
 
         const cacheKey = `stats_${userId}_${branchId}_${currentYear}_${currentMonth}`;

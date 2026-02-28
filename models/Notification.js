@@ -15,4 +15,7 @@ const NotificationSchema = new mongoose.Schema({
     userRole: { type: String, enum: ['field_visitor', 'branch_manager', 'manager'], required: true }
 });
 
+// Speed up notification retrieval and sorting for users
+NotificationSchema.index({ userId: 1, date: -1 });
+
 module.exports = mongoose.model('Notification', NotificationSchema);
