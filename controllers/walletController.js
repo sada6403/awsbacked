@@ -228,6 +228,23 @@ exports.requestCash = async (req, res) => {
         });
 
         await request.save();
+
+        // [NEW] Fire Push Notification to Branch Manager
+        try {
+            const { createAndSendNotification } = require('../utils/notificationHelper');
+            await createAndSendNotification({
+                title: 'New Cash Request',
+                body: `${fv.name} (FV) requested Rs. ${amount} for their wallet.`,
+                date: new Date(),
+                userId: fv.managerId,
+                userRole: 'manager',
+                managerId: fv.managerId,
+                branchId: fv.branchId
+            });
+        } catch (notifErr) {
+            console.error('Wallet Request Notification Error:', notifErr.message);
+        }
+
         res.status(201).json({ success: true, request });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
