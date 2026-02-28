@@ -8,10 +8,22 @@ const ExtraMember = require('../models/ExtraMember');
 const mongoose = require('mongoose');
 
 const BranchManager = require('../models/BranchManager');
-const NodeCache = require('node-cache');
 
-// Cache dashboard stats for 5 minutes (300 seconds) to prevent heavy DB aggregations
-const dashboardCache = new NodeCache({ stdTTL: 300, checkperiod: 320 });
+let dashboardCache;
+try {
+    const NodeCache = require('node-cache');
+    // Cache dashboard stats for 5 minutes (300 seconds) to prevent heavy DB aggregations
+    dashboardCache = new NodeCache({ stdTTL: 300, checkperiod: 320 });
+    console.log('[reportController] NodeCache initialized successfully.');
+} catch (e) {
+    console.warn('[reportController] node-cache not found. Dashboard caching is disabled. Use "npm install" to enable.');
+    // Mock cache object to prevent crashes
+    dashboardCache = {
+        has: () => false,
+        get: () => null,
+        set: () => null
+    };
+}
 
 const branchFilter = (user) => ({ branchId: user.branchId || 'default-branch' });
 
