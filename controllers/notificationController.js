@@ -167,5 +167,37 @@ const markNotificationsAsRead = async (req, res) => {
     }
 };
 
-module.exports = { getMyNotifications, createNotification, markNotificationsAsRead };
+// @desc    Mark a single notification as read
+// @route   PUT /api/notifications/:id/mark-read
+// @access  Private
+const markSingleNotificationAsRead = async (req, res) => {
+    try {
+        const userId = req.user?._id;
+        if (!userId) {
+            return res.status(401).json({ success: false, message: 'Not authorized' });
+        }
 
+        const notificationId = req.params.id;
+
+        const notification = await Notification.findOneAndUpdate(
+            { _id: notificationId, userId },
+            { $set: { isRead: true } },
+            { new: true }
+        );
+
+        if (!notification) {
+            return res.status(404).json({ success: false, message: 'Notification not found' });
+        }
+
+        res.json({
+            success: true,
+            message: 'Notification marked as read',
+            data: notification
+        });
+    } catch (error) {
+        console.error('[markSingleNotificationAsRead] Error:', error.message);
+        res.status(500).json({ success: false, message: 'Failed to mark notification as read', error: error.message });
+    }
+};
+
+module.exports = { getMyNotifications, createNotification, markNotificationsAsRead, markSingleNotificationAsRead };

@@ -8,6 +8,10 @@ const ExtraMember = require('../models/ExtraMember');
 const mongoose = require('mongoose');
 
 const BranchManager = require('../models/BranchManager');
+const NodeCache = require('node-cache');
+
+// Cache dashboard stats for 5 minutes (300 seconds) to prevent heavy DB aggregations
+const dashboardCache = new NodeCache({ stdTTL: 300, checkperiod: 320 });
 
 const branchFilter = (user) => ({ branchId: user.branchId || 'default-branch' });
 
@@ -32,6 +36,12 @@ const getManagerDashboard = async (req, res) => {
                 { branchId: 'default-branch' }
             ]
         };
+
+        const cacheKey = `manager_dash_${req.user._id}_${branchId}`;
+        if (dashboardCache.has(cacheKey)) {
+            console.log(`[getManagerDashboard] Serving from Cache: ${cacheKey}`);
+            return res.json(dashboardCache.get(cacheKey));
+        }
 
         // Efficiently fetch all branch data in parallel
         const [
@@ -188,7 +198,7 @@ const getManagerDashboard = async (req, res) => {
             }
         });
 
-        res.json({
+        const responsePayload = {
             success: true,
             data: {
                 branchId,
@@ -206,7 +216,10 @@ const getManagerDashboard = async (req, res) => {
                 pie,
                 barChart
             }
-        });
+        };
+
+        dashboardCache.set(cacheKey, responsePayload);
+        res.json(responsePayload);
     } catch (error) {
         console.error('[getManagerDashboard] Error:', error.message);
         res.status(500).json({ success: false, message: 'Server Error', error: error.message });
@@ -235,6 +248,12 @@ const getFieldVisitorDashboard = async (req, res) => {
 
         let fieldVisitorId = req.user?._id;
         if (fieldVisitorId) fieldVisitorId = new mongoose.Types.ObjectId(fieldVisitorId);
+
+        const cacheKey = `fv_dash_${fieldVisitorId}_${branchId}`;
+        if (dashboardCache.has(cacheKey)) {
+            console.log(`[getFieldVisitorDashboard] Serving from Cache: ${cacheKey}`);
+            return res.json(dashboardCache.get(cacheKey));
+        }
 
         // Fetch Field Visitor info for wallet balance
         const visitor = await FieldVisitor.findById(fieldVisitorId).lean();
@@ -405,7 +424,7 @@ const getFieldVisitorDashboard = async (req, res) => {
             console.log(`[DEBUG] No transactions found for FV ${fieldVisitorId} in branch ${branchId}`);
         }
 
-        res.json({
+        const responsePayload = {
             success: true,
             data: {
                 branchId,
@@ -430,7 +449,10 @@ const getFieldVisitorDashboard = async (req, res) => {
                 unreadNotificationsCount,
                 notes
             }
-        });
+        };
+
+        dashboardCache.set(cacheKey, responsePayload);
+        res.json(responsePayload);
     } catch (error) {
         console.error('[getFieldVisitorDashboard] Error:', error.message);
         res.status(500).json({ success: false, message: 'Server Error', error: error.message });
@@ -544,7 +566,13 @@ const getDashboardStats = async (req, res) => {
             }
         };
 
-        console.log(`[getDashboardStats] User: ${userId} (${req.user?.role}) Branch: ${branchId} Month: ${currentMonth}`);
+        const cacheKey = `stats_${userId}_${branchId}_${currentYear}_${currentMonth}`;
+        if (dashboardCache.has(cacheKey)) {
+            console.log(`[getDashboardStats] Serving from Cache: ${cacheKey}`);
+            return res.json(dashboardCache.get(cacheKey));
+        }
+
+        console.log(`[getDashboardStats] User: ${userId} (${req.user?.role}) Branch: ${branchId} Month: ${currentMonth} (Cache Miss)`);
 
         // Efficiently fetch all required counts and data in parallel
         const [
@@ -675,7 +703,7 @@ const getDashboardStats = async (req, res) => {
             });
         }
 
-        res.json({
+        const responsePayload = {
             success: true,
             data: {
                 buy: { amount: buyAmount },
@@ -710,7 +738,10 @@ const getDashboardStats = async (req, res) => {
                 managersMemberCount,
                 annualLeads
             }
-        });
+        };
+
+        dashboardCache.set(cacheKey, responsePayload);
+        res.json(responsePayload);
     } catch (error) {
         console.error('[getDashboardStats] Error:', error.message);
         res.status(500).json({

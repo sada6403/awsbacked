@@ -41,7 +41,7 @@ const sendPushNotification = async (token, title, body, data = {}) => {
         android: {
             priority: 'high',
             notification: {
-                channelId: 'high_importance_channel',
+                channelId: 'high_importance_channel_with_sound',
                 sound: 'default'
             }
         },

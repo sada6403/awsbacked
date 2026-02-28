@@ -10,7 +10,7 @@ const Product = require('../models/Product');
 const products = [
     {
         productId: 'prod-aloe-packet',
-        name: 'Aloe Vera Packet',
+        name: 'Aloe Vera Packets',
         defaultBuyPrice: 100,
         defaultSellPrice: 100,
         unit: 'packets',

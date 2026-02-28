@@ -21,7 +21,7 @@ const generateBillNumber = async (type) => {
 
     // Find the latest transaction with this prefix to get the highest sequence
     const lastTransaction = await Transaction.findOne({
-        billNumber: new RegExp(`^${prefix}-`)
+        billNumber: new RegExp(`^${prefix}-\\d+$`)
     }).sort({ billNumber: -1 }).lean();
 
     let nextSequence = 1;
@@ -282,9 +282,10 @@ const createTransaction = async (req, res) => {
         if (req.user && req.user.role === 'manager') {
             try {
                 const { createAndSendNotification } = require('../utils/notificationHelper');
-                await createAndSendNotification({
+                // Fire and forget
+                createAndSendNotification({
                     title: `Transaction: ${normalizedType.toUpperCase()}`,
-                    body: `You performed a ${normalizedType.toUpperCase()} transaction of ${totalAmount} for ${member.name || member.fullName}. Bill: ${billNumber}`,
+                    body: `You performed a ${normalizedType.toUpperCase()} transaction of ${totalAmount} for ${(member.name || member.fullName) || 'Member'}. Bill: ${billNumber}`,
                     userId: req.user._id,
                     userRole: 'manager',
                     branchId: branchId,
@@ -292,55 +293,40 @@ const createTransaction = async (req, res) => {
                     managerId: req.user._id,
                     memberId: member._id,
                     date: new Date(),
-                    attachment: transaction.pdfUrl // Attach the PDF bill
-                });
-                console.log('[createTransaction] Manager notification created with PDF and push trigger.');
+                    attachment: saved.pdfUrl // Use saved.pdfUrl
+                }).catch(e => console.error('[createTransaction] ASYNC_MGR_NOTIF_ERROR:', e.message));
+                console.log('[createTransaction] Triggered manager notification (async).');
             } catch (notifErr) {
-                console.error('[createTransaction] Failed to create manager notification:', notifErr);
+                console.error('[createTransaction] CRITICAL_BYPASS: Failed to setup manager notification:', notifErr.message);
             }
         }
 
         // 1. Send SMS Bill (Normal SMS)
-        // --- Notifications (SMS & Email) ---
-        // 1. Send SMS Bill (Normal SMS)
-        try {
-            if (member.mobile) {
-                console.log('[createTransaction] Sending SMS...');
-                await smsService.sendBillSMS(member.mobile, {
-                    name: member.full_name || member.name,
-                    type: normalizedType.toUpperCase(),
-                    billNumber: billNumber,
-                    date: new Date().toLocaleDateString(),
-                    amount: totalAmount,
-                    productName: productName,
-                    quantity: Number(quantity),
-                    unitType: unitType,
-                    unitPrice: Number(unitPrice)
-                });
-                console.log('[createTransaction] SMS Sent.');
-            }
-        } catch (smsError) {
-            console.error('[createTransaction] SMS Failed:', smsError.message);
+        if (member.mobile) {
+            console.log('[createTransaction] Triggering SMS (async)...');
+            smsService.sendBillSMS(member.mobile, {
+                name: member.full_name || member.name,
+                type: normalizedType.toUpperCase(),
+                billNumber: billNumber,
+                date: new Date().toLocaleDateString(),
+                amount: totalAmount,
+                productName: productName,
+                quantity: Number(quantity),
+                unitType: unitType,
+                unitPrice: Number(unitPrice)
+            }).catch(e => console.error('[createTransaction] ASYNC_SMS_ERROR:', e.message));
         }
 
         // 2. Send Email Bill (PDF)
-        console.log(`[createTransaction] Processing Email. Member Email: '${member.email}'`);
-        try {
-            if (member.email && member.email.trim().length > 0) {
-                console.log('[createTransaction] Calling emailService.sendBillEmail...');
-                const mailRes = await emailService.sendBillEmail(member.email, {
-                    name: member.full_name || member.name,
-                    type: normalizedType.toUpperCase(),
-                    billNumber: billNumber,
-                    date: new Date().toLocaleDateString(),
-                    amount: totalAmount
-                }, saved.pdfUrl); // Use saved.pdfUrl
-                console.log('[createTransaction] Email Result:', JSON.stringify(mailRes));
-            } else {
-                console.warn('[createTransaction] SKIP EMAIL: Member has no email address.');
-            }
-        } catch (emailError) {
-            console.error('[createTransaction] Email Failed:', emailError);
+        if (member.email && member.email.trim().length > 0) {
+            console.log(`[createTransaction] Triggering Email (async) for ${member.email}`);
+            emailService.sendBillEmail(member.email, {
+                name: member.full_name || member.name,
+                type: normalizedType.toUpperCase(),
+                billNumber: billNumber,
+                date: new Date().toLocaleDateString(),
+                amount: totalAmount
+            }, saved.pdfUrl).catch(e => console.error('[createTransaction] ASYNC_EMAIL_ERROR:', e.message));
         }
 
         // Manual population for memberId since it can be from 3 different collections
@@ -361,16 +347,14 @@ const createTransaction = async (req, res) => {
         // Notify field visitor + branch manager
         try {
             console.log('[createTransaction] Preparing Notifications...');
-            let manager = null;
+            let managerNum = null;
             if (fv && fv.managerId) {
-                manager = await BranchManager.findById(fv.managerId).lean();
-            } else {
-                // If checking logic for direct manager role, could look up manager here.
-                // For now, if no FV, we don't naturally know which manager to notify unless we check branch.
+                // We await this as it's a DB query, but we could optimize if needed.
+                managerNum = await BranchManager.findById(fv.managerId).lean();
             }
 
             const title = `${normalizedType === 'sell' ? '📤 Sale' : '🛒 Purchase'} - ${productName}`;
-            const body = `Transaction of Rs. ${totalAmount} on ${new Date().toLocaleDateString()} for ${member.name}`;
+            const body = `Transaction of Rs. ${totalAmount} on ${new Date().toLocaleDateString()} for ${member.name || member.fullName || 'Member'}`;
 
             const notifications = [];
 
@@ -380,7 +364,7 @@ const createTransaction = async (req, res) => {
                     body,
                     date: new Date(),
                     isRead: false,
-                    attachment: saved.pdfUrl, // Use saved.pdfUrl
+                    attachment: saved.pdfUrl,
                     transactionId: saved._id,
                     fieldVisitorId: fv._id,
                     memberId: member._id,
@@ -390,29 +374,31 @@ const createTransaction = async (req, res) => {
                 });
             }
 
-            if (manager) {
+            if (managerNum) {
                 notifications.push({
                     title,
                     body,
                     date: new Date(),
                     isRead: false,
-                    attachment: saved.pdfUrl, // Use saved.pdfUrl
+                    attachment: saved.pdfUrl,
                     transactionId: saved._id,
-                    managerId: manager._id,
+                    managerId: managerNum._id,
                     memberId: member._id,
                     branchId,
-                    userId: manager._id,
+                    userId: managerNum._id,
                     userRole: 'manager'
                 });
             }
 
             const { sendManyAndPush } = require('../utils/notificationHelper');
-            console.log(`[createTransaction] Sending ${notifications.length} notifications via helper...`);
-            await sendManyAndPush(notifications);
+            console.log(`[createTransaction] Triggering ${notifications.length} notifications (async)...`);
+            // Fire and forget pushes
+            sendManyAndPush(notifications).catch(e => console.error('[createTransaction] ASYNC_NOTIF_ERROR:', e.message));
         } catch (notifyErr) {
-            console.error('[createTransaction] Notification Creation Failed:', notifyErr);
+            console.error('[createTransaction] Notification Preparation failed:', notifyErr.message);
         }
 
+        console.log('[createTransaction] Success! Returning response for bill:', saved.billNumber);
         res.status(201).json({
             success: true,
             data: populated
@@ -422,10 +408,13 @@ const createTransaction = async (req, res) => {
         console.error('[createTransaction] Stack:', error.stack);
         console.error('[createTransaction] Body:', req.body);
         console.error('[createTransaction] User:', req.user);
-        res.status(500).json({
+        // Improved error handling for specific cases like insufficient balance
+        const isInsufficientBalance = error.message && error.message.toLowerCase().includes('insufficient wallet balance');
+
+        res.status(isInsufficientBalance ? 400 : 500).json({
             success: false,
             message: error.message || 'Failed to create transaction',
-            v: 2,
+            v: 5,
             debug: {
                 error: error.toString(),
                 stack: error.stack

@@ -34,7 +34,7 @@ const CompanyTransferSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'approved', 'rejected', 'accepted'],
+        enum: ['pending', 'approved', 'rejected'],
         default: 'pending'
     }
 }, { timestamps: true });
