@@ -2,6 +2,7 @@ const ExtraMember = require('../models/ExtraMember');
 const Member = require('../models/Member');
 const FieldVisitor = require('../models/FieldVisitor');
 const BranchManager = require('../models/BranchManager');
+const WalletTransaction = require('../models/WalletTransaction');
 const mongoose = require('mongoose');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
 const { generateMemberCode } = require('../utils/memberHelper');
@@ -145,6 +146,34 @@ const registerMember = async (req, res, next) => {
 
         // EMIT REAL-TIME UPDATE
         emitMemberEvent('memberCreated', savedMember);
+
+        // CREDIT WALLET FOR FIELD VISITOR (Only for New Members)
+        if (req.user && (req.user.role === 'field_visitor' || req.user.role === 'field') && memberType === 'New') {
+            try {
+                const fv = await FieldVisitor.findById(req.user._id);
+                if (fv) {
+                    const bonusAmount = 4500;
+                    fv.walletBalance = (fv.walletBalance || 0) + bonusAmount;
+                    await fv.save();
+
+                    const walletTx = new WalletTransaction({
+                        userId: fv._id,
+                        userModel: 'FieldVisitor',
+                        type: 'input', // Use 'input' for bonus/registration fee
+                        amount: bonusAmount,
+                        balanceAfter: fv.walletBalance,
+                        reference: `Registration Fee: ${savedMember.name} (${savedMember.memberCode})`
+                    });
+                    await walletTx.save();
+
+                    console.log(`[Wallet] Credited 4500 to FV ${fv.name} for member ${savedMember.name}`);
+                }
+            } catch (walletErr) {
+                console.error('[Wallet] Bonus Credit Error:', walletErr);
+                // Don't fail the whole registration if wallet credit fails, 
+                // but log it prominently.
+            }
+        }
 
         res.status(201).json({
             success: true,
