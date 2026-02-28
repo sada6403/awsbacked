@@ -1,5 +1,9 @@
 // server.js
 require('dotenv').config();
+
+// Force the entire Node.js backend to run in Sri Lankan Time (+05:30)
+process.env.TZ = 'Asia/Colombo';
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
