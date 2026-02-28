@@ -42,7 +42,10 @@ const sendPushNotification = async (token, title, body, data = {}) => {
             priority: 'high',
             notification: {
                 channelId: 'high_importance_channel_with_sound',
-                sound: 'default'
+                sound: 'default',
+                defaultSound: true,
+                defaultVibrateTimings: true,
+                notificationPriority: 'PRIORITY_MAX'
             }
         },
         apns: {
