@@ -138,9 +138,9 @@ const getManagerDashboard = async (req, res) => {
             else if (c._id.type === 'sell') branchSellAmount += c.totalAmount;
         });
 
-        const memberMap = new Map(centralMemberCounts.map(m => [m._id?.toString(), m.memberCount]));
-        const leadMap = new Map(leadCounts.map(l => [l._id?.toString(), l.leadCount]));
-        const managerMap = new Map(managerMemberCounts.map(m => [m._id?.toString(), m.count]));
+        const memberMap = new Map((centralMemberCounts || []).map(m => [m._id?.toString(), m.memberCount]));
+        const leadMap = new Map((leadCounts || []).map(l => [l._id?.toString(), l.leadCount]));
+        const managerMap = new Map((managerMemberCounts || []).map(m => [m._id?.toString(), m.count]));
 
         const fieldVisitorStats = fieldVisitors.map(fv => {
             const key = fv._id.toString();
