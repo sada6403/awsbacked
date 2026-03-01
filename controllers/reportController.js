@@ -63,7 +63,7 @@ const getManagerDashboard = async (req, res) => {
         ] = await Promise.all([
             FieldVisitor.find(branchMatch).lean(),
             Transaction.aggregate([
-                { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
+                { $match: { ...branchMatch } }, // Use Lifetime Totals for Field Visitor summary
                 {
                     $group: {
                         _id: { fieldVisitorId: '$fieldVisitorId', type: '$type' },
@@ -72,32 +72,20 @@ const getManagerDashboard = async (req, res) => {
                     }
                 }
             ]),
-            // Members count (combined)
             FieldVisitor.find(branchMatch).select('_id').then(visitors => {
                 const visitorIds = visitors.map(v => v._id);
                 visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
-                return Promise.all([
-                    ExtraMember.aggregate([
-                        { $match: { collectedBy: { $in: visitorIds }, memberCode: { $exists: true, $ne: null, $ne: '' } } },
-                        { $group: { _id: '$collectedBy', memberCount: { $sum: 1 } } }
-                    ]),
-                    Member.aggregate([
-                        { $match: { fieldVisitorId: { $in: visitorIds } } },
-                        { $group: { _id: '$fieldVisitorId', memberCount: { $sum: 1 } } }
-                    ])
+                return Member.aggregate([
+                    { $match: { fieldVisitorId: { $in: visitorIds } } },
+                    { $group: { _id: '$fieldVisitorId', memberCount: { $sum: 1 } } }
                 ]);
             }),
-            // Leads
+            // Leads (Strictly from Leads collection)
             FieldVisitor.find(branchMatch).select('_id').then(visitors => {
                 const visitorIds = visitors.map(v => v._id);
                 visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
                 return ExtraMember.aggregate([
-                    {
-                        $match: {
-                            collectedBy: { $in: visitorIds },
-                            $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }]
-                        }
-                    },
+                    { $match: { collectedBy: { $in: visitorIds } } },
                     { $group: { _id: '$collectedBy', leadCount: { $sum: 1 } } }
                 ]);
             }),
@@ -366,16 +354,13 @@ const getFieldVisitorDashboard = async (req, res) => {
                 { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
             ]),
             Transaction.aggregate([
-                { $match: { ...branchMatch } },
+                { $match: { fieldVisitorId } },
                 { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
             ]),
             FieldVisitor.find({ branchId }).lean(),
             Member.countDocuments({ fieldVisitorId }),
             Notification.countDocuments({ userId: fieldVisitorId, isRead: false }),
-            ExtraMember.countDocuments({
-                collectedBy: fieldVisitorId,
-                collectedAt: { $gte: startOfMonth, $lte: endOfMonth }
-            }),
+            ExtraMember.countDocuments({ collectedBy: fieldVisitorId }),
             ExtraMember.countDocuments({
                 collectedBy: fieldVisitorId,
                 collectedAt: {
@@ -664,12 +649,7 @@ const getDashboardStats = async (req, res) => {
                     { $group: { _id: '$fieldVisitorId', count: { $sum: 1 } } }
                 ]),
                 ExtraMember.aggregate([
-                    {
-                        $match: {
-                            ...branchMatch,
-                            $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }]
-                        }
-                    },
+                    { $match: { ...branchMatch } },
                     { $group: { _id: '$collectedBy', count: { $sum: 1 } } }
                 ])
             ]);

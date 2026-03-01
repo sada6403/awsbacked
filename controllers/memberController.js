@@ -237,89 +237,58 @@ const getMembers = async (req, res) => {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-        const fetchWithTxs = async (Model, match) => {
-            return Model.aggregate([
-                { $match: match },
-                {
-                    $lookup: {
-                        from: 'transactions',
-                        localField: '_id',
-                        foreignField: 'memberId',
-                        as: 'txs'
-                    }
+        const memberResults = await Member.aggregate([
+            { $match: memberMatch },
+            {
+                $lookup: {
+                    from: 'transactions',
+                    localField: '_id',
+                    foreignField: 'memberId',
+                    as: 'txs'
                 }
-            ]);
-        };
-
-        const [extraResults, memberResults] = await Promise.all([
-            fetchWithTxs(ExtraMember, extraMatch),
-            fetchWithTxs(Member, memberMatch)
+            }
         ]);
 
-        const mergedMap = new Map();
-
-        const processResult = (m, isExtra) => {
+        const data = memberResults.map(m => {
             let totalBuyAmount = 0;
             let totalSellAmount = 0;
 
             if (m.txs && Array.isArray(m.txs)) {
                 m.txs.forEach(t => {
-                    // SWITCH TO LIFETIME TOTALS: valid transaction is all that matters
                     if (t.type === 'buy') totalBuyAmount += (t.totalAmount || 0);
                     if (t.type === 'sell') totalSellAmount += (t.totalAmount || 0);
                 });
             }
 
             const mobile = m.mobile || '';
-            const normalizedName = (m.name || '').trim().toLowerCase();
-            // Robust member code generation: Use existing, or generate from mobile, or fallback to random
-            const code = m.memberCode || (isExtra ? `L-${mobile.slice(-4)}` : `M-${mobile.slice(-4)}`);
+            const code = m.memberCode || `M-${mobile.slice(-4)}`;
 
-            // Use composite key to prevent merging different people with same mobile
-            const key = `${mobile}|${normalizedName}`;
-
-            if (!mergedMap.has(key)) {
-                mergedMap.set(key, {
-                    id: m._id.toString(),
-                    _id: m._id,
-                    name: m.name,
-                    full_name: m.name,
-                    mobile,
-                    address: m.address,
-                    postal_address: m.address,
-                    nic: m.nic,
-                    memberCode: code,
-                    member_code: code,
-                    fieldVisitorId: isExtra ? m.collectedBy : m.fieldVisitorId,
-                    field_visitor_id: isExtra ? m.collectedBy : m.fieldVisitorId,
-                    registeredAt: isExtra ? (m.collectedAt || m.createdAt) : m.registeredAt,
-                    totalBuyAmount,
-                    totalSellAmount,
-                    email: m.email || '',
-                    // Include full details for app & PDF generation
-                    registrationData: m.registrationData,
-                    signatureImage: m.signatureImage,
-                    profileImage: m.profileImage,
-                    memberType: m.memberType,
-                    registrationFeePaid: m.registrationFeePaid,
-                    biometricData: m.biometricData,
-                    pdfUrl: m.pdfUrl
-                });
-            } else {
-                const existing = mergedMap.get(key);
-                existing.totalBuyAmount += totalBuyAmount;
-                existing.totalSellAmount += totalSellAmount;
-                if (!existing.memberCode && code) {
-                    existing.memberCode = code;
-                    existing.member_code = code;
-                }
-            }
-        };
-
-        extraResults.forEach(m => processResult(m, true));
-        memberResults.forEach(m => processResult(m, false));
-
-        const data = Array.from(mergedMap.values()).sort((a, b) =>
+            return {
+                id: m._id.toString(),
+                _id: m._id,
+                name: m.name,
+                full_name: m.name,
+                mobile,
+                address: m.address,
+                postal_address: m.address,
+                nic: m.nic,
+                memberCode: code,
+                member_code: code,
+                fieldVisitorId: m.fieldVisitorId,
+                field_visitor_id: m.fieldVisitorId,
+                registeredAt: m.registeredAt,
+                totalBuyAmount,
+                totalSellAmount,
+                email: m.email || '',
+                registrationData: m.registrationData,
+                signatureImage: m.signatureImage,
+                profileImage: m.profileImage,
+                memberType: m.memberType,
+                registrationFeePaid: m.registrationFeePaid,
+                biometricData: m.biometricData,
+                pdfUrl: m.pdfUrl
+            };
+        }).sort((a, b) =>
             new Date(b.registeredAt || 0) - new Date(a.registeredAt || 0)
         );
 
