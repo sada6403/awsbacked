@@ -63,7 +63,7 @@ const getManagerDashboard = async (req, res) => {
         ] = await Promise.all([
             FieldVisitor.find(branchMatch).lean(),
             Transaction.aggregate([
-                { $match: { ...branchMatch } }, // Use Lifetime Totals for Field Visitor summary
+                { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
                 {
                     $group: {
                         _id: { fieldVisitorId: '$fieldVisitorId', type: '$type' },
@@ -72,20 +72,32 @@ const getManagerDashboard = async (req, res) => {
                     }
                 }
             ]),
+            // Members count (combined)
             FieldVisitor.find(branchMatch).select('_id').then(visitors => {
                 const visitorIds = visitors.map(v => v._id);
                 visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
-                return Member.aggregate([
-                    { $match: { fieldVisitorId: { $in: visitorIds } } },
-                    { $group: { _id: '$fieldVisitorId', memberCount: { $sum: 1 } } }
+                return Promise.all([
+                    ExtraMember.aggregate([
+                        { $match: { collectedBy: { $in: visitorIds }, memberCode: { $exists: true, $ne: null, $ne: '' } } },
+                        { $group: { _id: '$collectedBy', memberCount: { $sum: 1 } } }
+                    ]),
+                    Member.aggregate([
+                        { $match: { fieldVisitorId: { $in: visitorIds } } },
+                        { $group: { _id: '$fieldVisitorId', memberCount: { $sum: 1 } } }
+                    ])
                 ]);
             }),
-            // Leads (Strictly from Leads collection)
+            // Leads
             FieldVisitor.find(branchMatch).select('_id').then(visitors => {
                 const visitorIds = visitors.map(v => v._id);
                 visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
                 return ExtraMember.aggregate([
-                    { $match: { collectedBy: { $in: visitorIds } } },
+                    {
+                        $match: {
+                            collectedBy: { $in: visitorIds },
+                            $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }]
+                        }
+                    },
                     { $group: { _id: '$collectedBy', leadCount: { $sum: 1 } } }
                 ]);
             }),
@@ -354,13 +366,16 @@ const getFieldVisitorDashboard = async (req, res) => {
                 { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
             ]),
             Transaction.aggregate([
-                { $match: { fieldVisitorId } },
+                { $match: { ...branchMatch } },
                 { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
             ]),
             FieldVisitor.find({ branchId }).lean(),
             Member.countDocuments({ fieldVisitorId }),
             Notification.countDocuments({ userId: fieldVisitorId, isRead: false }),
-            ExtraMember.countDocuments({ collectedBy: fieldVisitorId }),
+            ExtraMember.countDocuments({
+                collectedBy: fieldVisitorId,
+                collectedAt: { $gte: startOfMonth, $lte: endOfMonth }
+            }),
             ExtraMember.countDocuments({
                 collectedBy: fieldVisitorId,
                 collectedAt: {
@@ -565,11 +580,7 @@ const getDashboardStats = async (req, res) => {
             totalLeads,
             annualLeads,
             managersMemberCount,
-            totalTransactionsCount,
-            totalMembers,
-            extraMembersCount,
-            recentExtraMembers,
-            transactions
+            totalTransactionsCount
         ] = await Promise.all([
             // 1. Monthly Transaction Breakdown
             Transaction.aggregate([
@@ -612,17 +623,10 @@ const getDashboardStats = async (req, res) => {
                     ExtraMember.countDocuments({ collectedBy: userId, memberCode: { $ne: null, $ne: '' } })
                 ]).then(([a, b]) => a + b)
                 : Promise.resolve(0),
+            // 10. Total Transactions Count
             isManager
                 ? Transaction.countDocuments({ branchId })
-                : Transaction.countDocuments({ fieldVisitorId: userId }),
-            // 11. Total Members
-            Member.countDocuments({ fieldVisitorId: userId }),
-            // 12. Total Leads (Repeated for payload compatibility)
-            ExtraMember.countDocuments({ collectedBy: userId }),
-            // 13. Recent Extra Members
-            ExtraMember.find({ collectedBy: userId }).sort({ collectedAt: -1 }).limit(10).lean(),
-            // 14. Transactions
-            Transaction.find(txFilter).sort({ date: -1 }).limit(10).lean()
+                : Transaction.countDocuments({ fieldVisitorId: userId })
         ]);
 
         let buyAmount = 0;
@@ -652,7 +656,7 @@ const getDashboardStats = async (req, res) => {
             const fvs = await FieldVisitor.find(branchMatch).lean();
             const [fvAggregation, fvMemberCounts, fvExtraCounts] = await Promise.all([
                 Transaction.aggregate([
-                    { $match: { ...branchMatch } },
+                    { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
                     { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' }, transactionCount: { $sum: 1 } } }
                 ]),
                 Member.aggregate([
@@ -660,7 +664,12 @@ const getDashboardStats = async (req, res) => {
                     { $group: { _id: '$fieldVisitorId', count: { $sum: 1 } } }
                 ]),
                 ExtraMember.aggregate([
-                    { $match: { ...branchMatch } },
+                    {
+                        $match: {
+                            ...branchMatch,
+                            $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }]
+                        }
+                    },
                     { $group: { _id: '$collectedBy', count: { $sum: 1 } } }
                 ])
             ]);

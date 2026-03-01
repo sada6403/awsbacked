@@ -1,0 +1,3 @@
+﻿Members in 'members' collection: 2
+Leads collection: Total=1, WithCode=0, WithoutCode=1
+Transactions: Count=2, BuyTotal=30000, SellTotal=0, Total=30000
