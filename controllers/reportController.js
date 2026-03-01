@@ -139,13 +139,14 @@ const getManagerDashboard = async (req, res) => {
         });
 
         const memberMap = new Map((centralMemberCounts || []).map(m => [m._id?.toString(), m.memberCount]));
+        const extraMap = new Map((extraMemberCounts || []).map(m => [m._id?.toString(), m.memberCount]));
         const leadMap = new Map((leadCounts || []).map(l => [l._id?.toString(), l.leadCount]));
         const managerMap = new Map((managerMemberCounts || []).map(m => [m._id?.toString(), m.count]));
 
-        const fieldVisitorStats = fieldVisitors.map(fv => {
+        const fieldVisitorStats = (fieldVisitors || []).map(fv => {
             const key = fv._id.toString();
             const contrib = contributionMap.get(key) || { totalAmount: 0, transactionCount: 0 };
-            let totalMembers = memberMap.get(key) || 0;
+            let totalMembers = (memberMap.get(key) || 0) + (extraMap.get(key) || 0);
             if (key === req.user._id.toString()) totalMembers += (managerMap.get(key) || 0);
 
             return {
@@ -171,8 +172,16 @@ const getManagerDashboard = async (req, res) => {
 
         // Recent items (merged)
         const [recentMgrMembers, recentExtMembers] = await Promise.all([
-            ManagersMember.find({ addedBy: req.user._id }).sort({ createdAt: -1 }).limit(10).lean(),
-            ExtraMember.find({ collectedBy: req.user._id }).sort({ collectedAt: -1 }).limit(10).lean()
+            ManagersMember.find({ addedBy: req.user._id })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage')
+                .sort({ createdAt: -1 })
+                .limit(10)
+                .lean(),
+            ExtraMember.find({ collectedBy: req.user._id })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
+                .sort({ collectedAt: -1 })
+                .limit(10)
+                .lean()
         ]);
 
         const recentManagerMembers = [...recentMgrMembers, ...recentExtMembers]
@@ -182,7 +191,7 @@ const getManagerDashboard = async (req, res) => {
         // Prepare pie chart (branch distribution)
         const pie = {
             total: totalBranchAmount,
-            slices: fieldVisitorStats.map(fv => ({
+            slices: (fieldVisitorStats || []).map(fv => ({
                 label: fv.name,
                 value: fv.totalAmount,
                 userId: fv.userId
@@ -370,7 +379,10 @@ const getFieldVisitorDashboard = async (req, res) => {
                 { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
             ]),
             FieldVisitor.find({ branchId }).lean(),
-            Member.countDocuments({ fieldVisitorId }),
+            Promise.all([
+                Member.countDocuments({ fieldVisitorId }),
+                ExtraMember.countDocuments({ collectedBy: fieldVisitorId, memberCode: { $exists: true, $ne: null, $ne: '' } })
+            ]).then(([c1, c2]) => c1 + c2),
             Notification.countDocuments({ userId: fieldVisitorId, isRead: false }),
             ExtraMember.countDocuments({
                 collectedBy: fieldVisitorId,
@@ -580,7 +592,10 @@ const getDashboardStats = async (req, res) => {
             totalLeads,
             annualLeads,
             managersMemberCount,
-            totalTransactionsCount
+            totalTransactionsCount,
+            transactions,
+            recentExtraMembers,
+            totalMembersCount
         ] = await Promise.all([
             // 1. Monthly Transaction Breakdown
             Transaction.aggregate([
@@ -626,7 +641,23 @@ const getDashboardStats = async (req, res) => {
             // 10. Total Transactions Count
             isManager
                 ? Transaction.countDocuments({ branchId })
-                : Transaction.countDocuments({ fieldVisitorId: userId })
+                : Transaction.countDocuments({ fieldVisitorId: userId }),
+            // 11. Recent Transactions
+            Transaction.find(isManager ? branchMatch : { fieldVisitorId: userId }).sort({ date: -1 }).limit(10).lean(),
+            // 12. Recent Leads (Extra Members)
+            ExtraMember.find({ collectedBy: userId })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
+                .sort({ collectedAt: -1 })
+                .limit(10)
+                .lean(),
+            // 13. Total Members Count (Combined)
+            Promise.all([
+                Member.countDocuments(isManager ? branchMatch : { fieldVisitorId: userId }),
+                ExtraMember.countDocuments({
+                    ...(isManager ? branchMatch : { collectedBy: userId }),
+                    memberCode: { $ne: null, $ne: '' }
+                })
+            ]).then(([a, b]) => a + b)
         ]);
 
         let buyAmount = 0;
@@ -659,10 +690,24 @@ const getDashboardStats = async (req, res) => {
                     { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
                     { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' }, transactionCount: { $sum: 1 } } }
                 ]),
-                Member.aggregate([
-                    { $match: { ...branchMatch } },
-                    { $group: { _id: '$fieldVisitorId', count: { $sum: 1 } } }
-                ]),
+                Promise.all([
+                    Member.aggregate([
+                        { $match: { ...branchMatch } },
+                        { $group: { _id: '$fieldVisitorId', count: { $sum: 1 } } }
+                    ]),
+                    ExtraMember.aggregate([
+                        { $match: { ...branchMatch, memberCode: { $exists: true, $ne: null, $ne: '' } } },
+                        { $group: { _id: '$collectedBy', count: { $sum: 1 } } }
+                    ])
+                ]).then(([memberCounts, extraCounts]) => {
+                    const mMap = new Map(memberCounts.map(c => [c._id?.toString(), c.count]));
+                    const eMap = new Map(extraCounts.map(c => [c._id?.toString(), c.count]));
+                    const uniqueIds = new Set([...mMap.keys(), ...eMap.keys()]);
+                    return Array.from(uniqueIds).map(id => ({
+                        _id: id,
+                        count: (mMap.get(id) || 0) + (eMap.get(id) || 0)
+                    }));
+                }),
                 ExtraMember.aggregate([
                     {
                         $match: {
@@ -719,19 +764,19 @@ const getDashboardStats = async (req, res) => {
                     others: sellOthers,
                     total: sellThisUser + sellOthers
                 },
-                totalMembers,
-                extraMembersCount,
-                recentExtraMembers,
-                recentManagerMembers: isManager ? recentExtraMembers : [],
-                totalTransactions: totalTransactionsCount,
-                transactions,
-                notifications,
-                unreadNotificationsCount,
-                fieldVisitors,
-                monthlyLeads,
-                totalLeads,
-                managersMemberCount,
-                annualLeads
+                totalMembers: totalMembersCount || 0,
+                extraMembersCount: totalLeads || 0,
+                recentExtraMembers: recentExtraMembers || [],
+                recentManagerMembers: isManager ? (recentExtraMembers || []) : [],
+                totalTransactions: totalTransactionsCount || 0,
+                transactions: transactions || [],
+                notifications: notifications || [],
+                unreadNotificationsCount: unreadNotificationsCount || 0,
+                fieldVisitors: fieldVisitors || [],
+                monthlyLeads: monthlyLeads || 0,
+                totalLeads: totalLeads || 0,
+                managersMemberCount: managersMemberCount || 0,
+                annualLeads: annualLeads || 0
             }
         };
 

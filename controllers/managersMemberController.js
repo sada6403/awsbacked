@@ -337,8 +337,14 @@ const getMyMembers = async (req, res) => {
         console.log(`[getMyMembers] Manager: ${req.user.role} | ID: ${managerId}`);
 
         const [mgrMembers, extMembers] = await Promise.all([
-            ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).lean(),
-            ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).lean()
+            ManagersMember.find({ addedBy: userOid })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage')
+                .sort({ createdAt: -1 })
+                .lean(),
+            ExtraMember.find({ collectedBy: userOid })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
+                .sort({ collectedAt: -1 })
+                .lean()
         ]);
 
         console.log(`[getMyMembers] Found: ManagersMember=${mgrMembers.length}, ExtraMember=${extMembers.length}`);
@@ -373,8 +379,16 @@ const getRecentMembers = async (req, res) => {
         console.log(`[getRecentMembers] Manager: ${managerId} | Limit: ${limit}`);
 
         const [mgrMembers, extMembers] = await Promise.all([
-            ManagersMember.find({ addedBy: userOid }).sort({ createdAt: -1 }).limit(limit).lean(),
-            ExtraMember.find({ collectedBy: userOid }).sort({ collectedAt: -1 }).limit(limit).lean()
+            ManagersMember.find({ addedBy: userOid })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage')
+                .sort({ createdAt: -1 })
+                .limit(limit)
+                .lean(),
+            ExtraMember.find({ collectedBy: userOid })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
+                .sort({ collectedAt: -1 })
+                .limit(limit)
+                .lean()
         ]);
 
         // Merge and sort

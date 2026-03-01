@@ -45,14 +45,17 @@ const sendPushNotification = async (token, title, body, data = {}) => {
                 sound: 'default',
                 defaultSound: true,
                 defaultVibrateTimings: true,
-                notificationPriority: 'PRIORITY_MAX'
+                defaultLightSettings: true,
+                notificationPriority: 'PRIORITY_MAX',
+                visibility: 'VISIBILITY_PUBLIC'
             }
         },
         apns: {
             payload: {
                 aps: {
                     sound: 'default',
-                    badge: 1
+                    badge: 1,
+                    'content-available': 1
                 }
             }
         }
