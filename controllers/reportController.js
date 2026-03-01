@@ -656,7 +656,7 @@ const getDashboardStats = async (req, res) => {
             const fvs = await FieldVisitor.find(branchMatch).lean();
             const [fvAggregation, fvMemberCounts, fvExtraCounts] = await Promise.all([
                 Transaction.aggregate([
-                    { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
+                    { $match: { ...branchMatch } },
                     { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' }, transactionCount: { $sum: 1 } } }
                 ]),
                 Member.aggregate([
