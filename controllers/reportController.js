@@ -565,7 +565,11 @@ const getDashboardStats = async (req, res) => {
             totalLeads,
             annualLeads,
             managersMemberCount,
-            totalTransactionsCount
+            totalTransactionsCount,
+            totalMembers,
+            extraMembersCount,
+            recentExtraMembers,
+            transactions
         ] = await Promise.all([
             // 1. Monthly Transaction Breakdown
             Transaction.aggregate([
@@ -608,10 +612,17 @@ const getDashboardStats = async (req, res) => {
                     ExtraMember.countDocuments({ collectedBy: userId, memberCode: { $ne: null, $ne: '' } })
                 ]).then(([a, b]) => a + b)
                 : Promise.resolve(0),
-            // 10. Total Transactions Count
             isManager
                 ? Transaction.countDocuments({ branchId })
-                : Transaction.countDocuments({ fieldVisitorId: userId })
+                : Transaction.countDocuments({ fieldVisitorId: userId }),
+            // 11. Total Members
+            Member.countDocuments({ fieldVisitorId: userId }),
+            // 12. Total Leads (Repeated for payload compatibility)
+            ExtraMember.countDocuments({ collectedBy: userId }),
+            // 13. Recent Extra Members
+            ExtraMember.find({ collectedBy: userId }).sort({ collectedAt: -1 }).limit(10).lean(),
+            // 14. Transactions
+            Transaction.find(txFilter).sort({ date: -1 }).limit(10).lean()
         ]);
 
         let buyAmount = 0;
