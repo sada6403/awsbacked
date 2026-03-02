@@ -22,4 +22,7 @@ const MemberSchema = new mongoose.Schema({
     walletBalance: { type: Number, default: 0 }
 });
 
+// Compound index for fast retrieval and sorting of branch members
+MemberSchema.index({ branchId: 1, registeredAt: -1 });
+
 module.exports = mongoose.model('Member', MemberSchema);

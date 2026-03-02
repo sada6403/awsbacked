@@ -7,6 +7,8 @@ process.env.TZ = 'Asia/Colombo';
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const compression = require('compression');
+const morgan = require('morgan');
 const { initializeFCM } = require('./utils/pushNotification');
 
 // Initialize Firebase Admin
@@ -49,15 +51,11 @@ const path = require('path');
 app.use('/bills', express.static(path.join(__dirname, 'public', 'bills')));
 app.use('/members', express.static(path.join(__dirname, 'public', 'members')));
 
-// Request logging middleware
-app.use((req, res, next) => {
-    console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.path}`);
-    console.log('Headers:', req.headers);
-    if (req.body && Object.keys(req.body).length > 0) {
-        console.log('Body:', JSON.stringify(req.body, null, 2));
-    }
-    next();
-});
+// Performance: Enable gzip compression for response payloads
+app.use(compression());
+
+// Performance: Non-blocking async logging of HTTP requests
+app.use(morgan('dev'));
 
 // 2. Connect to MongoDB Atlas with automatic fallback to local MongoDB
 // Why fallback exists:
