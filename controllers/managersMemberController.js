@@ -331,18 +331,23 @@ const registerMember = async (req, res) => {
 // @access  Private (Manager)
 const getMyMembers = async (req, res) => {
     try {
-        const managerId = req.user._id;
-        const userOid = new mongoose.Types.ObjectId(managerId);
+        const branchId = req.user.branchId || 'default-branch';
+        const userOid = new mongoose.Types.ObjectId(req.user._id);
 
-        console.log(`[getMyMembers] Manager: ${req.user.role} | ID: ${managerId}`);
+        console.log(`[getMyMembers] Role: ${req.user.role} | Branch: ${branchId} | ID: ${req.user._id}`);
+
+        // Filter by branch if available, otherwise fallback to user specific members
+        const branchFilter = (branchId && branchId !== 'default-branch')
+            ? { branchId: { $regex: new RegExp(`^${branchId}$`, 'i') } }
+            : null;
 
         const [mgrMembers, extMembers] = await Promise.all([
-            ManagersMember.find({ addedBy: userOid })
+            ManagersMember.find(branchFilter || { addedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage')
                 .sort({ createdAt: -1 })
                 .limit(100)
                 .lean(),
-            ExtraMember.find({ collectedBy: userOid })
+            ExtraMember.find(branchFilter || { collectedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
                 .sort({ collectedAt: -1 })
                 .limit(100)
@@ -374,19 +379,23 @@ const getMyMembers = async (req, res) => {
 // @access  Private (Manager)
 const getRecentMembers = async (req, res) => {
     try {
-        const managerId = req.user._id;
-        const userOid = new mongoose.Types.ObjectId(managerId);
+        const branchId = req.user.branchId || 'default-branch';
+        const userOid = new mongoose.Types.ObjectId(req.user._id);
         const limit = parseInt(req.query.limit) || 5;
 
-        console.log(`[getRecentMembers] Manager: ${managerId} | Limit: ${limit}`);
+        console.log(`[getRecentMembers] Branch: ${branchId} | Limit: ${limit}`);
+
+        const branchFilter = (branchId && branchId !== 'default-branch')
+            ? { branchId: { $regex: new RegExp(`^${branchId}$`, 'i') } }
+            : null;
 
         const [mgrMembers, extMembers] = await Promise.all([
-            ManagersMember.find({ addedBy: userOid })
+            ManagersMember.find(branchFilter || { addedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage')
                 .sort({ createdAt: -1 })
                 .limit(limit)
                 .lean(),
-            ExtraMember.find({ collectedBy: userOid })
+            ExtraMember.find(branchFilter || { collectedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
                 .sort({ collectedAt: -1 })
                 .limit(limit)
