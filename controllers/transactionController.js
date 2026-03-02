@@ -82,11 +82,19 @@ const createTransaction = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Member not found in any collection' });
         }
 
-        // Branch check - Robust case-insensitive comparison
-        const memberBranch = (member.branchId || '').toLowerCase();
-        const userBranch = branchId.toLowerCase();
+        // Branch check - Robust case-insensitive comparison (Check both ID and Name)
+        const memberBranch = (member.branchId || '').trim().toLowerCase();
+        const userBranchId = (req.user?.branchId || branchId || '').trim().toLowerCase();
+        const userBranchName = (req.user?.branchName || '').trim().toLowerCase();
 
-        if (memberBranch && memberBranch !== userBranch && memberBranch !== 'default-branch' && userBranch !== 'default-branch') {
+        console.log(`[createTransaction] Branch Check: MemberBranch="${memberBranch}" | UserBranchID="${userBranchId}" | UserBranchName="${userBranchName}" | MemberID=${memberId}`);
+
+        // Allow if memberBranch matches either the ID or the Name of the user's branch
+        const isMatch = (memberBranch === userBranchId) || (memberBranch === userBranchName);
+        const isDefault = (memberBranch === 'default-branch') || (userBranchId === 'default-branch');
+
+        if (memberBranch && !isMatch && !isDefault) {
+            console.error(`[createTransaction] 403 Branch Mismatch: MemberBranch="${memberBranch}" vs (ID="${userBranchId}" OR Name="${userBranchName}")`);
             return res.status(403).json({ success: false, message: 'Member not in your branch' });
         }
 
