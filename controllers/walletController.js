@@ -281,49 +281,96 @@ exports.getWalletRequests = async (req, res) => {
 // @route   POST /api/wallet/requests/:id/approve
 // @access  Private (Manager only)
 exports.approveWalletRequest = async (req, res) => {
-    // Check if we can use transactions (replica set) or not (standalone)
     const useTransactions = process.env.USE_TRANSACTIONS !== 'false';
     let session = null;
 
     try {
+        // 1. Role Validation
+        if (req.user.role !== 'manager' && req.user.role !== 'branch_manager') {
+            return res.status(403).json({ success: false, message: 'Forbidden: Only managers can approve requests' });
+        }
+
+        const managerId = req.user._id;
+        const { id } = req.params;
+        let { managerNote } = req.body;
+
+        // Strip out empty or null notes to keep DB clean
+        if (managerNote !== undefined && managerNote?.trim() === "") {
+            managerNote = undefined;
+        }
+
         if (useTransactions) {
             session = await mongoose.startSession();
             session.startTransaction();
         }
 
-        const { managerNote } = req.body;
-        const managerId = req.user._id;
-
         const queryOptions = session ? { session } : {};
 
-        const request = session ? await WalletRequest.findById(req.params.id).session(session) : await WalletRequest.findById(req.params.id);
-        if (!request) throw new Error('Request not found');
-        if (request.status !== 'pending') throw new Error('Request already processed');
+        // 2. Atomic Fetch & Lock (Find request ONLY if it is pending, prevents duplicate processing)
+        const request = session
+            ? await WalletRequest.findOneAndUpdate(
+                { _id: id, status: 'pending' },
+                { status: 'processing' }, // Temporary state lock
+                { new: true, session }
+            )
+            : await WalletRequest.findOneAndUpdate(
+                { _id: id, status: 'pending' },
+                { status: 'processing' },
+                { new: true }
+            );
 
-        const manager = session ? await BranchManager.findById(managerId).session(session) : await BranchManager.findById(managerId);
-        if (manager.walletBalance < request.amount) throw new Error('Insufficient wallet balance');
+        if (!request) {
+            throw { status: 400, message: 'Request not found or already processed' };
+        }
 
-        const fv = session ? await FieldVisitor.findById(request.fvId).session(session) : await FieldVisitor.findById(request.fvId);
+        // 3. Find Manager and Check Balance
+        const manager = session
+            ? await BranchManager.findById(managerId).session(session)
+            : await BranchManager.findById(managerId);
 
-        // Deduct from Manager, Add to FV
-        manager.walletBalance -= Number(request.amount);
-        fv.walletBalance = (fv.walletBalance || 0) + Number(request.amount);
+        if (!manager) throw { status: 404, message: 'Manager not found' };
 
+        if ((manager.walletBalance || 0) < request.amount) {
+            // Rollback the lock if insufficient balance
+            request.status = 'pending';
+            await request.save(queryOptions);
+            throw { status: 400, message: 'Insufficient wallet balance' };
+        }
+
+        // 4. Find Field Visitor
+        const fv = session
+            ? await FieldVisitor.findById(request.fvId).session(session)
+            : await FieldVisitor.findById(request.fvId);
+
+        if (!fv) {
+            // Rollback the lock if FV not found
+            request.status = 'pending';
+            await request.save(queryOptions);
+            throw { status: 404, message: 'Field Visitor not found' };
+        }
+
+        // 5. Atomic Balance Updates
+        const updatedManager = session
+            ? await BranchManager.findByIdAndUpdate(managerId, { $inc: { walletBalance: -request.amount } }, { new: true, session })
+            : await BranchManager.findByIdAndUpdate(managerId, { $inc: { walletBalance: -request.amount } }, { new: true });
+
+        const updatedFV = session
+            ? await FieldVisitor.findByIdAndUpdate(request.fvId, { $inc: { walletBalance: request.amount } }, { new: true, session })
+            : await FieldVisitor.findByIdAndUpdate(request.fvId, { $inc: { walletBalance: request.amount } }, { new: true });
+
+        // 6. Commit Request Status
         request.status = 'approved';
-        request.managerNote = managerNote;
+        if (managerNote) request.managerNote = managerNote;
         request.isProcessed = true;
-
-        await manager.save(queryOptions);
-        await fv.save(queryOptions);
         await request.save(queryOptions);
 
-        // Record transactions
+        // 7. Record Transactions
         const txOut = new WalletTransaction({
             userId: managerId,
             userModel: 'BranchManager',
             type: 'transfer_out',
             amount: request.amount,
-            balanceAfter: manager.walletBalance,
+            balanceAfter: updatedManager.walletBalance,
             reference: `Approved Request: ${request.fvNote || 'N/A'}`,
             relatedUserId: fv._id,
             relatedUserModel: 'FieldVisitor'
@@ -334,7 +381,7 @@ exports.approveWalletRequest = async (req, res) => {
             userModel: 'FieldVisitor',
             type: 'transfer_in',
             amount: request.amount,
-            balanceAfter: fv.walletBalance,
+            balanceAfter: updatedFV.walletBalance,
             reference: `Request Approved by Manager`,
             relatedUserId: managerId,
             relatedUserModel: 'BranchManager'
@@ -347,12 +394,8 @@ exports.approveWalletRequest = async (req, res) => {
             await session.commitTransaction();
         }
 
-        // Notify FV
+        // 8. Notifications (Fire & Forget, don't break flow if they fail)
         try {
-            if (fv.phone) {
-            }
-
-            // Create Notification for Field Visitor
             const { createAndSendNotification } = require('../utils/notificationHelper');
             await createAndSendNotification({
                 title: 'Cash Request Approved',
@@ -363,16 +406,30 @@ exports.approveWalletRequest = async (req, res) => {
                 fieldVisitorId: fv._id,
                 branchId: fv.branchId
             });
-        } catch (smsErr) {
-            console.error('Approval SMS Error:', smsErr.message);
+        } catch (notifErr) {
+            console.error('Approval Notification Error:', notifErr.message);
         }
 
-        res.json({ success: true, message: 'Request approved and cash transferred' });
+        res.status(200).json({
+            success: true,
+            message: 'Request approved and cash transferred successfully.',
+            managerBalance: updatedManager.walletBalance
+        });
+
     } catch (error) {
         if (useTransactions && session) {
             await session.abortTransaction();
         }
-        res.status(400).json({ success: false, message: error.message });
+
+        console.error('Wallet Approval Error:', error);
+
+        const statusCode = error.status || 500;
+        const message = error.status ? error.message : 'Server error occurred during wallet approval';
+
+        res.status(statusCode).json({
+            success: false,
+            message: message
+        });
     } finally {
         if (session) {
             session.endSession();
