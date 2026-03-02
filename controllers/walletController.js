@@ -20,9 +20,9 @@ exports.getWalletBalance = async (req, res) => {
 
         let user;
         if (role === 'manager') {
-            user = await BranchManager.findById(userId).select('walletBalance');
+            user = await BranchManager.findById(userId).select('walletBalance').lean();
         } else if (role === 'field_visitor') {
-            user = await FieldVisitor.findById(userId).select('walletBalance');
+            user = await FieldVisitor.findById(userId).select('walletBalance').lean();
         }
 
         if (!user) {
@@ -197,8 +197,10 @@ exports.getWalletHistory = async (req, res) => {
     try {
         const userId = req.user._id;
         const history = await WalletTransaction.find({ userId })
+            .select('-__v -updatedAt')
             .sort({ createdAt: -1 })
-            .limit(50);
+            .limit(50)
+            .lean();
         res.json({ success: true, history });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -270,7 +272,8 @@ exports.getWalletRequests = async (req, res) => {
             .populate('fvId', 'name')
             .populate('memberId', 'name memberCode')
             .sort({ createdAt: -1 })
-            .limit(100);
+            .limit(100)
+            .lean();
 
         res.json({ success: true, requests });
     } catch (error) {
@@ -808,7 +811,8 @@ exports.getCompanyTransfers = async (req, res) => {
         const userId = req.user._id;
         const transfers = await CompanyTransfer.find({ userId })
             .sort({ createdAt: -1 })
-            .limit(50);
+            .limit(50)
+            .lean();
         res.json({ success: true, count: transfers.length, data: transfers });
     } catch (error) {
         res.status(400).json({ success: false, message: error.message });
