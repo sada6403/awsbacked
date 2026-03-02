@@ -13,6 +13,7 @@ const getMyNotes = async (req, res) => {
 
         const notes = await Note.find({ fieldVisitorId })
             .sort({ createdAt: -1 })
+            .limit(50)
             .lean();
 
         res.json({ success: true, count: notes.length, data: notes });

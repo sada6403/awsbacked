@@ -8,7 +8,7 @@ const ExtraMemberSchema = new mongoose.Schema({
     nic: { type: String, required: true, unique: true },
     memberCode: { type: String, unique: true, sparse: true }, // Generated ID
     collectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldVisitor', required: true, index: true },
-    collectedAt: { type: Date, default: Date.now },
+    collectedAt: { type: Date, default: Date.now, index: true },
     branchId: { type: String, index: true },
     area: { type: String },
     registrationData: { type: Object },

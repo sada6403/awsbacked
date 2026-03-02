@@ -464,6 +464,7 @@ const getTransactions = async (req, res) => {
         console.log('[getTransactions] Query:', JSON.stringify(query));
         const transactions = await Transaction.find(query)
             .sort({ date: -1 })
+            .limit(100)
             .populate('fieldVisitorId', 'name userId branchId')
             .lean();
 

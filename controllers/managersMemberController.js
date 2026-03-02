@@ -340,10 +340,12 @@ const getMyMembers = async (req, res) => {
             ManagersMember.find({ addedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage')
                 .sort({ createdAt: -1 })
+                .limit(100)
                 .lean(),
             ExtraMember.find({ collectedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
                 .sort({ collectedAt: -1 })
+                .limit(100)
                 .lean()
         ]);
 

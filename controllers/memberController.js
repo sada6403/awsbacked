@@ -240,6 +240,17 @@ const getMembers = async (req, res) => {
         const fetchWithTxs = async (Model, match) => {
             return Model.aggregate([
                 { $match: match },
+                { $sort: { [Model.modelName === 'Member' ? 'registeredAt' : 'collectedAt']: -1 } },
+                { $limit: 100 },
+                {
+                    $project: {
+                        profileImage: 0,
+                        signatureImage: 0,
+                        idFrontImage: 0,
+                        idBackImage: 0,
+                        biometricData: 0
+                    }
+                },
                 {
                     $lookup: {
                         from: 'transactions',

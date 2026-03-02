@@ -11,7 +11,7 @@ const MemberSchema = new mongoose.Schema({
     branchId: { type: String, required: true, default: 'default-branch', index: true },
     area: { type: String, default: 'default-area' }, // Area where member operates (must match FV area)
     registrationData: { type: Object }, // Store all verified registration details
-    registeredAt: { type: Date, default: Date.now },
+    registeredAt: { type: Date, default: Date.now, index: true },
     profileImage: { type: String }, // Base64 encoded image
     memberType: { type: String, enum: ['New', 'Old'], default: 'New' },
     registrationFeePaid: { type: Boolean, default: false },

@@ -251,7 +251,9 @@ const getFieldVisitors = async (req, res) => {
 
     const count = await FieldVisitor.countDocuments({ branchId });
 
-    let query = FieldVisitor.find({ branchId });
+    let query = FieldVisitor.find({ branchId })
+        .select('name userId phone branchId area status createdAt')
+        .limit(50);
 
     const attachCounts = async (visitors) => {
         return Promise.all(visitors.map(async (v) => {
@@ -284,7 +286,7 @@ const getFieldVisitors = async (req, res) => {
 const getFieldVisitorById = async (req, res) => {
     try {
         const fieldVisitor = await FieldVisitor.findById(req.params.id)
-            .select('-password') // Exclude password
+            .select('-password -__v') // Exclude password and version
             .lean();
 
         if (fieldVisitor) {

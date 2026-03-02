@@ -61,7 +61,7 @@ const getManagerDashboard = async (req, res) => {
             manager,
             monthlyData
         ] = await Promise.all([
-            FieldVisitor.find(branchMatch).lean(),
+            FieldVisitor.find(branchMatch).select('name userId phone branchId area status').lean(),
             Transaction.aggregate([
                 { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
                 {

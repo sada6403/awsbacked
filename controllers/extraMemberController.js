@@ -139,11 +139,15 @@ exports.getExtraMembers = async (req, res) => {
         // Only show leads that HAVEN'T been registered (no memberCode)
         query.memberCode = { $exists: false };
 
-        const members = await ExtraMember.find(query).sort({ collectedAt: -1 });
+        const members = await ExtraMember.find(query)
+            .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
+            .sort({ collectedAt: -1 })
+            .limit(100)
+            .lean();
 
         // Map to legacy format for UI compatibility if needed
         const data = members.map(m => ({
-            ...m.toObject(),
+            ...m,
             id: m._id,
             full_name: m.name,
             postal_address: m.address,
