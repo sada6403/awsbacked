@@ -4,7 +4,8 @@ const CompanyTransferSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         required: true,
-        refPath: 'userModel'
+        refPath: 'userModel',
+        index: true
     },
     userModel: {
         type: String,

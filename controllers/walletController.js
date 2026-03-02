@@ -198,7 +198,7 @@ exports.getWalletHistory = async (req, res) => {
         const userId = req.user._id;
         const history = await WalletTransaction.find({ userId })
             .sort({ createdAt: -1 })
-            .limit(100);
+            .limit(50);
         res.json({ success: true, history });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -269,7 +269,8 @@ exports.getWalletRequests = async (req, res) => {
         const requests = await WalletRequest.find(query)
             .populate('fvId', 'name')
             .populate('memberId', 'name memberCode')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .limit(100);
 
         res.json({ success: true, requests });
     } catch (error) {
@@ -805,7 +806,9 @@ exports.approveCompanyTransfer = async (req, res) => {
 exports.getCompanyTransfers = async (req, res) => {
     try {
         const userId = req.user._id;
-        const transfers = await CompanyTransfer.find({ userId }).sort({ createdAt: -1 });
+        const transfers = await CompanyTransfer.find({ userId })
+            .sort({ createdAt: -1 })
+            .limit(50);
         res.json({ success: true, count: transfers.length, data: transfers });
     } catch (error) {
         res.status(400).json({ success: false, message: error.message });

@@ -1,7 +1,12 @@
 const mongoose = require('mongoose');
 
 const WalletTransactionSchema = new mongoose.Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'userModel' },
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+        refPath: 'userModel',
+        index: true
+    },
     userModel: { type: String, required: true, enum: ['BranchManager', 'FieldVisitor'] },
     type: {
         type: String,
