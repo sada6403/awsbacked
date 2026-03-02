@@ -110,12 +110,12 @@ exports.transferCash = async (req, res) => {
             throw new Error('Only managers can transfer cash');
         }
 
-        const manager = await BranchManager.findById(managerId).session(session);
+        const manager = session ? await BranchManager.findById(managerId).session(session) : await BranchManager.findById(managerId);
         if (manager.walletBalance < amount) {
             throw new Error('Insufficient wallet balance');
         }
 
-        const fv = await FieldVisitor.findById(fvId).session(session);
+        const fv = session ? await FieldVisitor.findById(fvId).session(session) : await FieldVisitor.findById(fvId);
         if (!fv) {
             throw new Error('Field Visitor not found');
         }
@@ -296,14 +296,14 @@ exports.approveWalletRequest = async (req, res) => {
 
         const queryOptions = session ? { session } : {};
 
-        const request = await WalletRequest.findById(req.params.id).session(session);
+        const request = session ? await WalletRequest.findById(req.params.id).session(session) : await WalletRequest.findById(req.params.id);
         if (!request) throw new Error('Request not found');
         if (request.status !== 'pending') throw new Error('Request already processed');
 
-        const manager = await BranchManager.findById(managerId).session(session);
+        const manager = session ? await BranchManager.findById(managerId).session(session) : await BranchManager.findById(managerId);
         if (manager.walletBalance < request.amount) throw new Error('Insufficient wallet balance');
 
-        const fv = await FieldVisitor.findById(request.fvId).session(session);
+        const fv = session ? await FieldVisitor.findById(request.fvId).session(session) : await FieldVisitor.findById(request.fvId);
 
         // Deduct from Manager, Add to FV
         manager.walletBalance -= Number(request.amount);
@@ -668,15 +668,15 @@ exports.approveCompanyTransfer = async (req, res) => {
         const queryOptions = session ? { session } : {};
         const { id } = req.params;
 
-        const transfer = await CompanyTransfer.findById(id).session(session);
+        const transfer = session ? await CompanyTransfer.findById(id).session(session) : await CompanyTransfer.findById(id);
         if (!transfer) throw new Error('Transfer request not found');
         if (transfer.status !== 'pending') throw new Error('Transfer is not pending');
 
         let user;
         if (transfer.userModel === 'BranchManager') {
-            user = await BranchManager.findById(transfer.userId).session(session);
+            user = session ? await BranchManager.findById(transfer.userId).session(session) : await BranchManager.findById(transfer.userId);
         } else {
-            user = await FieldVisitor.findById(transfer.userId).session(session);
+            user = session ? await FieldVisitor.findById(transfer.userId).session(session) : await FieldVisitor.findById(transfer.userId);
         }
 
         if (!user) throw new Error('User associated with transfer not found');
