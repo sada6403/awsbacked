@@ -4,6 +4,7 @@ const smsService = require('../services/smsService');
 const emailService = require('../services/emailService');
 const ManagersMember = require('../models/ManagersMember');
 const ExtraMember = require('../models/ExtraMember');
+const Member = require('../models/Member');
 const BranchManager = require('../models/BranchManager');
 const { generateMemberCode } = require('../utils/memberHelper');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
@@ -341,25 +342,30 @@ const getMyMembers = async (req, res) => {
             ? { branchId: { $regex: new RegExp(`^${branchId}$`, 'i') } }
             : null;
 
-        const [mgrMembers, extMembers] = await Promise.all([
+        const [mgrMembers, extMembers, centMembers] = await Promise.all([
             ManagersMember.find(branchFilter || { addedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage')
                 .sort({ createdAt: -1 })
-                .limit(100)
+                .limit(50)
                 .lean(),
             ExtraMember.find(branchFilter || { collectedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
                 .sort({ collectedAt: -1 })
+                .limit(50)
+                .lean(),
+            Member.find(branchFilter || { fieldVisitorId: userOid })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
+                .sort({ registeredAt: -1 })
                 .limit(100)
                 .lean()
         ]);
 
-        console.log(`[getMyMembers] Found: ManagersMember=${mgrMembers.length}, ExtraMember=${extMembers.length}`);
+        console.log(`[getMyMembers] Found: ManagersMember=${mgrMembers.length}, ExtraMember=${extMembers.length}, CentralMember=${centMembers.length}`);
 
         // Merge and sort by date with robustness
-        const members = [...mgrMembers, ...extMembers].sort((a, b) => {
-            const dateA = new Date(a.createdAt || a.collectedAt || 0);
-            const dateB = new Date(b.createdAt || b.collectedAt || 0);
+        const members = [...mgrMembers, ...extMembers, ...centMembers].sort((a, b) => {
+            const dateA = new Date(a.createdAt || a.collectedAt || a.registeredAt || 0);
+            const dateB = new Date(b.createdAt || b.collectedAt || b.registeredAt || 0);
             return dateB - dateA;
         });
 
@@ -389,7 +395,7 @@ const getRecentMembers = async (req, res) => {
             ? { branchId: { $regex: new RegExp(`^${branchId}$`, 'i') } }
             : null;
 
-        const [mgrMembers, extMembers] = await Promise.all([
+        const [mgrMembers, extMembers, centMembers] = await Promise.all([
             ManagersMember.find(branchFilter || { addedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage')
                 .sort({ createdAt: -1 })
@@ -399,15 +405,20 @@ const getRecentMembers = async (req, res) => {
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
                 .sort({ collectedAt: -1 })
                 .limit(limit)
+                .lean(),
+            Member.find(branchFilter || { fieldVisitorId: userOid })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
+                .sort({ registeredAt: -1 })
+                .limit(limit)
                 .lean()
         ]);
 
         // Merge and sort
-        const members = [...mgrMembers, ...extMembers].sort((a, b) => {
-            const dateA = new Date(a.createdAt || a.collectedAt || 0);
-            const dateB = new Date(b.createdAt || b.collectedAt || 0);
+        const members = [...mgrMembers, ...extMembers, ...centMembers].sort((a, b) => {
+            const dateA = new Date(a.createdAt || a.collectedAt || a.registeredAt || 0);
+            const dateB = new Date(b.createdAt || b.collectedAt || b.registeredAt || 0);
             return dateB - dateA;
-        }).slice(0, limit);
+        });
 
         res.status(200).json({ success: true, count: members.length, data: members });
     } catch (error) {
