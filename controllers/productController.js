@@ -26,7 +26,8 @@ const getProducts = async (req, res) => {
                 sellPrice: override ? (override.sellPrice ?? override.price ?? p.defaultSellPrice) : p.defaultSellPrice,
                 defaultBuyPrice: p.defaultBuyPrice,
                 defaultSellPrice: p.defaultSellPrice,
-                isBranchPrice: !!override
+                isBranchPrice: true, // Force to true so frontend displays it in buy_sell screen
+                isActuallyOverridden: !!override // Keep real state just in case
             };
         });
 
