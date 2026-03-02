@@ -82,28 +82,8 @@ const createTransaction = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Member not found in any collection' });
         }
 
-        // Branch check - Robust case-insensitive comparison (Check both ID and Name)
-        const memberBranch = (member.branchId || '').trim().toLowerCase();
-        const userBranchId = (req.user?.branchId || branchId || '').trim().toLowerCase();
-        const userBranchName = (req.user?.branchName || '').trim().toLowerCase();
-
-        console.log(`[createTransaction] DEBUG BRANCH:
-            Member: "${member.name}" (${memberId})
-            MemberBranch: "${memberBranch}"
-            UserBranchID: "${userBranchId}"
-            UserBranchName: "${userBranchName}"
-        `);
-
-        // Robust matching including prefix matching (e.g., "trinco" matches "trincomalee")
-        const isMatch = (memberBranch === userBranchId) ||
-            (memberBranch === userBranchName) ||
-            (userBranchName.startsWith(memberBranch) && memberBranch.length > 3) ||
-            (memberBranch.startsWith(userBranchName) && userBranchName.length > 3);
-
-        const isDefault = (memberBranch === 'default-branch') || (userBranchId.includes('default'));
-
-        if (memberBranch && !isMatch && !isDefault) {
-            console.error(`[createTransaction] 403 REJECTED: "${memberBranch}" does not match ID "${userBranchId}" or Name "${userBranchName}"`);
+        // Branch check - assuming ExtraMember has branchId (I added it to models/ExtraMember.js earlier)
+        if (member.branchId && member.branchId !== branchId) {
             return res.status(403).json({ success: false, message: 'Member not in your branch' });
         }
 

@@ -4,7 +4,6 @@ const smsService = require('../services/smsService');
 const emailService = require('../services/emailService');
 const ManagersMember = require('../models/ManagersMember');
 const ExtraMember = require('../models/ExtraMember');
-const Member = require('../models/Member');
 const BranchManager = require('../models/BranchManager');
 const { generateMemberCode } = require('../utils/memberHelper');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
@@ -332,40 +331,30 @@ const registerMember = async (req, res) => {
 // @access  Private (Manager)
 const getMyMembers = async (req, res) => {
     try {
-        const branchId = req.user.branchId || 'default-branch';
-        const userOid = new mongoose.Types.ObjectId(req.user._id);
+        const managerId = req.user._id;
+        const userOid = new mongoose.Types.ObjectId(managerId);
 
-        console.log(`[getMyMembers] Role: ${req.user.role} | Branch: ${branchId} | ID: ${req.user._id}`);
+        console.log(`[getMyMembers] Manager: ${req.user.role} | ID: ${managerId}`);
 
-        // Filter by branch if available, otherwise fallback to user specific members
-        const branchFilter = (branchId && branchId !== 'default-branch')
-            ? { branchId: { $regex: new RegExp(`^${branchId}$`, 'i') } }
-            : null;
-
-        const [mgrMembers, extMembers, centMembers] = await Promise.all([
-            ManagersMember.find(branchFilter || { addedBy: userOid })
+        const [mgrMembers, extMembers] = await Promise.all([
+            ManagersMember.find({ addedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage')
                 .sort({ createdAt: -1 })
-                .limit(50)
+                .limit(100)
                 .lean(),
-            ExtraMember.find(branchFilter || { collectedBy: userOid })
+            ExtraMember.find({ collectedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
                 .sort({ collectedAt: -1 })
-                .limit(50)
-                .lean(),
-            Member.find(branchFilter || { fieldVisitorId: userOid })
-                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
-                .sort({ registeredAt: -1 })
                 .limit(100)
                 .lean()
         ]);
 
-        console.log(`[getMyMembers] Found: ManagersMember=${mgrMembers.length}, ExtraMember=${extMembers.length}, CentralMember=${centMembers.length}`);
+        console.log(`[getMyMembers] Found: ManagersMember=${mgrMembers.length}, ExtraMember=${extMembers.length}`);
 
         // Merge and sort by date with robustness
-        const members = [...mgrMembers, ...extMembers, ...centMembers].sort((a, b) => {
-            const dateA = new Date(a.createdAt || a.collectedAt || a.registeredAt || 0);
-            const dateB = new Date(b.createdAt || b.collectedAt || b.registeredAt || 0);
+        const members = [...mgrMembers, ...extMembers].sort((a, b) => {
+            const dateA = new Date(a.createdAt || a.collectedAt || 0);
+            const dateB = new Date(b.createdAt || b.collectedAt || 0);
             return dateB - dateA;
         });
 
@@ -385,40 +374,31 @@ const getMyMembers = async (req, res) => {
 // @access  Private (Manager)
 const getRecentMembers = async (req, res) => {
     try {
-        const branchId = req.user.branchId || 'default-branch';
-        const userOid = new mongoose.Types.ObjectId(req.user._id);
+        const managerId = req.user._id;
+        const userOid = new mongoose.Types.ObjectId(managerId);
         const limit = parseInt(req.query.limit) || 5;
 
-        console.log(`[getRecentMembers] Branch: ${branchId} | Limit: ${limit}`);
+        console.log(`[getRecentMembers] Manager: ${managerId} | Limit: ${limit}`);
 
-        const branchFilter = (branchId && branchId !== 'default-branch')
-            ? { branchId: { $regex: new RegExp(`^${branchId}$`, 'i') } }
-            : null;
-
-        const [mgrMembers, extMembers, centMembers] = await Promise.all([
-            ManagersMember.find(branchFilter || { addedBy: userOid })
+        const [mgrMembers, extMembers] = await Promise.all([
+            ManagersMember.find({ addedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage')
                 .sort({ createdAt: -1 })
                 .limit(limit)
                 .lean(),
-            ExtraMember.find(branchFilter || { collectedBy: userOid })
+            ExtraMember.find({ collectedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
                 .sort({ collectedAt: -1 })
-                .limit(limit)
-                .lean(),
-            Member.find(branchFilter || { fieldVisitorId: userOid })
-                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
-                .sort({ registeredAt: -1 })
                 .limit(limit)
                 .lean()
         ]);
 
         // Merge and sort
-        const members = [...mgrMembers, ...extMembers, ...centMembers].sort((a, b) => {
-            const dateA = new Date(a.createdAt || a.collectedAt || a.registeredAt || 0);
-            const dateB = new Date(b.createdAt || b.collectedAt || b.registeredAt || 0);
+        const members = [...mgrMembers, ...extMembers].sort((a, b) => {
+            const dateA = new Date(a.createdAt || a.collectedAt || 0);
+            const dateB = new Date(b.createdAt || b.collectedAt || 0);
             return dateB - dateA;
-        });
+        }).slice(0, limit);
 
         res.status(200).json({ success: true, count: members.length, data: members });
     } catch (error) {

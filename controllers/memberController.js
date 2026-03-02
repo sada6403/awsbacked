@@ -256,7 +256,16 @@ const getMembers = async (req, res) => {
                         from: 'transactions',
                         localField: '_id',
                         foreignField: 'memberId',
-                        as: 'txs'
+                        pipeline: [
+                            {
+                                $group: {
+                                    _id: '$type',
+                                    totalAmount: { $sum: '$totalAmount' },
+                                    totalQuantity: { $sum: '$quantity' }
+                                }
+                            }
+                        ],
+                        as: 'txStats'
                     }
                 }
             ]);
@@ -273,18 +282,21 @@ const getMembers = async (req, res) => {
             let totalBuyAmount = 0;
             let totalSellAmount = 0;
 
-            if (m.txs && Array.isArray(m.txs)) {
-                m.txs.forEach(t => {
-                    // SWITCH TO LIFETIME TOTALS: valid transaction is all that matters
-                    if (t.type === 'buy') totalBuyAmount += (t.totalAmount || 0);
-                    if (t.type === 'sell') totalSellAmount += (t.totalAmount || 0);
+            if (m.txStats && Array.isArray(m.txStats)) {
+                m.txStats.forEach(stat => {
+                    if (stat._id === 'buy') {
+                        totalBuyAmount = stat.totalAmount || 0;
+                    } else if (stat._id === 'sell') {
+                        totalSellAmount = stat.totalAmount || 0;
+                    }
                 });
             }
 
             const mobile = m.mobile || '';
             const normalizedName = (m.name || '').trim().toLowerCase();
-            // Robust member code generation: Use existing, or generate from mobile, or fallback to random
-            const code = m.memberCode || (isExtra ? `L-${mobile.slice(-4)}` : `M-${mobile.slice(-4)}`);
+            // Robust member code generation: Use 'M-' prefix for both to bypass frontend filtering of 'L-' leads
+            // This ensures leads show up in the Field Visitor's main member list as requested.
+            const code = m.memberCode || (isExtra ? `M-${mobile.slice(-4)}` : `M-${mobile.slice(-4)}`);
 
             // Use composite key to prevent merging different people with same mobile
             const key = `${mobile}|${normalizedName}`;

@@ -264,13 +264,13 @@ const getFieldVisitorDashboard = async (req, res) => {
             return res.json(dashboardCache.get(cacheKey));
         }
 
-        // Fetch Field Visitor info for wallet balance
+        // 1. Fetch Field Visitor info for wallet balance
         const visitor = await FieldVisitor.findById(fieldVisitorId).lean();
         const walletBalance = visitor?.walletBalance || 0;
 
-        // Get BUY and SELL totals separately for accurate dashboard
+        // Get BUY and SELL totals for the visitor
         const transactionBreakdown = await Transaction.aggregate([
-            { $match: { ...branchMatch, fieldVisitorId } },
+            { $match: { fieldVisitorId } },
             {
                 $group: {
                     _id: '$type',
@@ -295,65 +295,31 @@ const getFieldVisitorDashboard = async (req, res) => {
             }
         });
 
-        // Latest transactions for this field visitor
-        const transactions = await Transaction.find({ ...branchMatch, fieldVisitorId })
+        // Latest transactions for this field visitor (Lean fetch)
+        const transactions = await Transaction.find({ fieldVisitorId })
+            .select('billNumber type productName quantity totalAmount date memberId')
             .sort({ date: -1 })
-            .limit(50)
-            .populate('memberId', 'name mobile memberCode branchId')
+            .limit(20)
+            .populate('memberId', 'name mobile memberCode')
             .lean();
 
-        // Notifications and notes (auto-fill if legacy data missing)
-        let notifications = await Notification.find({ fieldVisitorId })
+        // Notifications and notes (Standard fetch, skip expensive autofill logic in GET)
+        const notifications = await Notification.find({ userId: fieldVisitorId })
             .sort({ date: -1 })
-            .limit(50)
+            .limit(10)
             .lean();
 
-        if (notifications.length === 0) {
-            const existingIds = new Set(notifications.map(n => n.transactionId?.toString()));
-            const missingTx = transactions.filter(tx => tx._id && !existingIds.has(tx._id.toString()));
-            if (missingTx.length) {
-                const bulk = missingTx.map(tx => ({
-                    title: `${tx.type === 'sell' ? '📤 Sale' : '🛒 Purchase'} - ${tx.productName}`,
-                    body: `Transaction of Rs. ${tx.totalAmount} on ${new Date(tx.date).toLocaleDateString()} for ${(tx.memberId && tx.memberId.name) || 'Member'}`,
-                    date: tx.date || new Date(),
-                    isRead: false,
-                    transactionId: tx._id,
-                    fieldVisitorId,
-                    memberId: tx.memberId?._id || tx.memberId,
-                    branchId,
-                    userId: fieldVisitorId,
-                    userRole: 'field_visitor'
-                }));
-                if (bulk.length) {
-                    await Notification.insertMany(bulk);
-                    notifications = await Notification.find({ fieldVisitorId })
-                        .sort({ date: -1 })
-                        .limit(50)
-                        .lean();
-                }
-            }
-        }
-
-        // Efficiently fetch all visitor data in parallel
+        // Efficiently fetch remaining dashboard data in parallel
         const [
-            visitorData, // renamed to avoid conflict if any
-            totals,
             notes,
             buyAmountBreakdown,
             sellAmountBreakdown,
-            branchAgg,
-            branchFieldVisitors,
             totalMembers,
             unreadNotificationsCount,
             monthlyLeads,
             annualLeads
         ] = await Promise.all([
-            FieldVisitor.findById(fieldVisitorId).lean(),
-            Transaction.aggregate([
-                { $match: { fieldVisitorId } },
-                { $group: { _id: '$type', totalAmount: { $sum: '$totalAmount' } } }
-            ]),
-            Note.find({ fieldVisitorId }).sort({ createdAt: -1 }).limit(50).lean(),
+            Note.find({ fieldVisitorId }).sort({ createdAt: -1 }).limit(20).lean(),
             Transaction.aggregate([
                 {
                     $match: {
@@ -374,14 +340,9 @@ const getFieldVisitorDashboard = async (req, res) => {
                 },
                 { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
             ]),
-            Transaction.aggregate([
-                { $match: { ...branchMatch } },
-                { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
-            ]),
-            FieldVisitor.find({ branchId }).lean(),
             Promise.all([
                 Member.countDocuments({ fieldVisitorId }),
-                ExtraMember.countDocuments({ collectedBy: fieldVisitorId, memberCode: { $exists: true, $ne: null, $ne: '' } })
+                ExtraMember.countDocuments({ collectedBy: fieldVisitorId }) // Include LEADS without memberCode
             ]).then(([c1, c2]) => c1 + c2),
             Notification.countDocuments({ userId: fieldVisitorId, isRead: false }),
             ExtraMember.countDocuments({
@@ -397,13 +358,7 @@ const getFieldVisitorDashboard = async (req, res) => {
             })
         ]);
 
-        const fvTotalsFinal = { buy: 0, sell: 0 };
-        totals.forEach(t => {
-            if (t._id === 'buy') fvTotalsFinal.buy = t.totalAmount;
-            else if (t._id === 'sell') fvTotalsFinal.sell = t.totalAmount;
-        });
-
-        const walletBalanceResult = visitorData?.walletBalance || 0;
+        const fvTotalsFinal = { buy: buyTotal, sell: sellTotal };
 
         let buyThisVisitor = 0;
         let buyOthers = 0;
@@ -419,16 +374,9 @@ const getFieldVisitorDashboard = async (req, res) => {
             else sellOthers += item.totalAmount;
         });
 
-        const branchTotal = branchAgg.reduce((sum, item) => sum + item.totalAmount, 0);
-        const fvMap = new Map(branchAgg.map(i => [i._id?.toString(), i.totalAmount]));
         const branchPie = {
-            total: branchTotal,
-            slices: branchFieldVisitors.map(fv => ({
-                label: fv.name || fv.fullName || fv.userId,
-                value: fvMap.get(fv._id.toString()) || 0,
-                fieldVisitorId: fv._id,
-                userId: fv.userId
-            }))
+            total: (buyThisVisitor + buyOthers + sellThisVisitor + sellOthers),
+            slices: [] // Simplified: frontend mostly uses buyPieChart/sellPieChart directly
         };
 
         // For debugging missing amounts
@@ -446,7 +394,7 @@ const getFieldVisitorDashboard = async (req, res) => {
                     sellAmount: sellThisVisitor,
                     totalAmount: buyThisVisitor + sellThisVisitor
                 },
-                walletBalance: walletBalanceResult,
+                walletBalance,
                 totalMembers,
                 monthlyLeads,
                 annualLeads,
