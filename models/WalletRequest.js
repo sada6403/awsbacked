@@ -16,8 +16,4 @@ const WalletRequestSchema = new mongoose.Schema({
     isProcessed: { type: Boolean, default: false }
 }, { timestamps: true });
 
-// Compound index to speed up "pending" request fetches by manager or FV
-WalletRequestSchema.index({ managerId: 1, status: 1 });
-WalletRequestSchema.index({ fvId: 1, status: 1 });
-
 module.exports = mongoose.model('WalletRequest', WalletRequestSchema);
