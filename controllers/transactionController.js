@@ -82,8 +82,11 @@ const createTransaction = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Member not found in any collection' });
         }
 
-        // Branch check - assuming ExtraMember has branchId (I added it to models/ExtraMember.js earlier)
-        if (member.branchId && member.branchId !== branchId) {
+        // Branch check - Robust case-insensitive comparison
+        const memberBranch = (member.branchId || '').toLowerCase();
+        const userBranch = branchId.toLowerCase();
+
+        if (memberBranch && memberBranch !== userBranch && memberBranch !== 'default-branch' && userBranch !== 'default-branch') {
             return res.status(403).json({ success: false, message: 'Member not in your branch' });
         }
 
