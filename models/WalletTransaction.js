@@ -21,5 +21,6 @@ const WalletTransactionSchema = new mongoose.Schema({
     relatedUserModel: { type: String, enum: ['BranchManager', 'FieldVisitor'] },
     date: { type: Date, default: Date.now }
 }, { timestamps: true });
+WalletTransactionSchema.index({ userId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('WalletTransaction', WalletTransactionSchema);

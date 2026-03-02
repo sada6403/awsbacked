@@ -15,5 +15,7 @@ const WalletRequestSchema = new mongoose.Schema({
     managerNote: { type: String },
     isProcessed: { type: Boolean, default: false }
 }, { timestamps: true });
+WalletRequestSchema.index({ managerId: 1, createdAt: -1 });
+WalletRequestSchema.index({ fvId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('WalletRequest', WalletRequestSchema);

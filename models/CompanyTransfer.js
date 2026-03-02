@@ -39,5 +39,6 @@ const CompanyTransferSchema = new mongoose.Schema({
         default: 'pending'
     }
 }, { timestamps: true });
+CompanyTransferSchema.index({ userId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('CompanyTransfer', CompanyTransferSchema);
