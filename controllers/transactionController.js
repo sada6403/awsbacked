@@ -87,14 +87,23 @@ const createTransaction = async (req, res) => {
         const userBranchId = (req.user?.branchId || branchId || '').trim().toLowerCase();
         const userBranchName = (req.user?.branchName || '').trim().toLowerCase();
 
-        console.log(`[createTransaction] Branch Check: MemberBranch="${memberBranch}" | UserBranchID="${userBranchId}" | UserBranchName="${userBranchName}" | MemberID=${memberId}`);
+        console.log(`[createTransaction] DEBUG BRANCH:
+            Member: "${member.name}" (${memberId})
+            MemberBranch: "${memberBranch}"
+            UserBranchID: "${userBranchId}"
+            UserBranchName: "${userBranchName}"
+        `);
 
-        // Allow if memberBranch matches either the ID or the Name of the user's branch
-        const isMatch = (memberBranch === userBranchId) || (memberBranch === userBranchName);
-        const isDefault = (memberBranch === 'default-branch') || (userBranchId === 'default-branch');
+        // Robust matching including prefix matching (e.g., "trinco" matches "trincomalee")
+        const isMatch = (memberBranch === userBranchId) ||
+            (memberBranch === userBranchName) ||
+            (userBranchName.startsWith(memberBranch) && memberBranch.length > 3) ||
+            (memberBranch.startsWith(userBranchName) && userBranchName.length > 3);
+
+        const isDefault = (memberBranch === 'default-branch') || (userBranchId.includes('default'));
 
         if (memberBranch && !isMatch && !isDefault) {
-            console.error(`[createTransaction] 403 Branch Mismatch: MemberBranch="${memberBranch}" vs (ID="${userBranchId}" OR Name="${userBranchName}")`);
+            console.error(`[createTransaction] 403 REJECTED: "${memberBranch}" does not match ID "${userBranchId}" or Name "${userBranchName}"`);
             return res.status(403).json({ success: false, message: 'Member not in your branch' });
         }
 
