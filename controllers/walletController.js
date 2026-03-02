@@ -810,6 +810,7 @@ exports.getCompanyTransfers = async (req, res) => {
     try {
         const userId = req.user._id;
         const transfers = await CompanyTransfer.find({ userId })
+            .select('-receiptUrl')
             .sort({ createdAt: -1 })
             .limit(50)
             .lean();
