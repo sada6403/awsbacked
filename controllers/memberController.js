@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
 const { generateMemberCode } = require('../utils/memberHelper');
 const { emitMemberEvent } = require('../utils/socketService');
+const { clearDashboardCache } = require('./reportController');
 
 // @desc    Register a member
 // @route   POST /api/members
@@ -174,6 +175,9 @@ const registerMember = async (req, res, next) => {
                 // but log it prominently.
             }
         }
+
+        // Clear dashboard cache to show the new member immediately
+        clearDashboardCache();
 
         res.status(201).json({
             success: true,
@@ -391,10 +395,8 @@ const updateMember = async (req, res) => {
         // EMIT REAL-TIME UPDATE
         emitMemberEvent('memberUpdated', updatedMember);
 
-        // If it's a registered member, we might need to sync back to Member if we updated ExtraMember?
-        // Actually, the app usually updates via ID. 
-        // If it was ExtraMember, it stays there. 
-        // If it was Member, it stays there.
+        // Clear dashboard cache to show updates immediately
+        clearDashboardCache();
 
         res.json({ success: true, data: updatedMember, message: 'Member updated successfully' });
     } catch (error) {

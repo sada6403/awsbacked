@@ -1,5 +1,6 @@
 const ExtraMember = require('../models/ExtraMember');
 const translationService = require('../services/translationService');
+const { clearDashboardCache } = require('./reportController');
 
 // @desc    Add a new extra member (lead)
 // @route   POST /api/extra-members
@@ -52,6 +53,9 @@ exports.addExtraMember = async (req, res) => {
             collectedBy: fieldVisitorId,
             collectedAt: new Date()
         });
+
+        // Clear dashboard cache if lead addition affects any counts
+        clearDashboardCache();
 
         res.status(201).json({
             success: true,

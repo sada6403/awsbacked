@@ -21,9 +21,20 @@ try {
     dashboardCache = {
         has: () => false,
         get: () => null,
-        set: () => null
+        set: () => null,
+        flushAll: () => null
     };
 }
+
+/**
+ * Force clear the dashboard cache (e.g. after registration)
+ */
+const clearDashboardCache = () => {
+    if (dashboardCache && typeof dashboardCache.flushAll === 'function') {
+        dashboardCache.flushAll();
+        console.log('[reportController] Dashboard cache cleared.');
+    }
+};
 
 const branchFilter = (user) => ({ branchId: user.branchId || 'default-branch' });
 
@@ -342,7 +353,8 @@ const getFieldVisitorDashboard = async (req, res) => {
             ]),
             Promise.all([
                 Member.countDocuments({ fieldVisitorId }),
-                ExtraMember.countDocuments({ collectedBy: fieldVisitorId }) // Include LEADS without memberCode
+                // Consistency fix: include all ExtraMembers as they appear in the UI list as members (M- prefix)
+                ExtraMember.countDocuments({ collectedBy: fieldVisitorId })
             ]).then(([c1, c2]) => c1 + c2),
             Notification.countDocuments({ userId: fieldVisitorId, isRead: false }),
             ExtraMember.countDocuments({
@@ -599,11 +611,13 @@ const getDashboardStats = async (req, res) => {
                 .limit(10)
                 .lean(),
             // 13. Total Members Count (Combined)
+            // Synchronized with UI list logic: include all leads for Field Visitors
             Promise.all([
                 Member.countDocuments(isManager ? branchMatch : { fieldVisitorId: userId }),
                 ExtraMember.countDocuments({
                     ...(isManager ? branchMatch : { collectedBy: userId }),
-                    memberCode: { $ne: null, $ne: '' }
+                    // If manager, we might still want to filter, but for FVs we want ALL
+                    ...(isManager ? { memberCode: { $ne: null, $ne: '' } } : {})
                 })
             ]).then(([a, b]) => a + b)
         ]);
@@ -811,4 +825,11 @@ const getMemberTransactions = async (req, res) => {
     }
 };
 
-module.exports = { getManagerDashboard, getFieldVisitorDashboard, getYearlyAnalysis, getDashboardStats, getMemberTransactions };
+module.exports = {
+    getManagerDashboard,
+    getFieldVisitorDashboard,
+    getYearlyAnalysis,
+    getDashboardStats,
+    getMemberTransactions,
+    clearDashboardCache
+};
