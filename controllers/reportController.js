@@ -353,9 +353,8 @@ const getFieldVisitorDashboard = async (req, res) => {
             ]),
             Promise.all([
                 Member.countDocuments({ fieldVisitorId }),
-                // Consistency fix: include all ExtraMembers as they appear in the UI list as members (M- prefix)
-                ExtraMember.countDocuments({ collectedBy: fieldVisitorId })
-            ]).then(([c1, c2]) => c1 + c2),
+                // ExtraMember (Leads) are now excluded from the primary Total Members count per user request
+            ]).then(([c1]) => c1),
             Notification.countDocuments({ userId: fieldVisitorId, isRead: false }),
             ExtraMember.countDocuments({
                 collectedBy: fieldVisitorId,
@@ -611,13 +610,13 @@ const getDashboardStats = async (req, res) => {
                 .limit(10)
                 .lean(),
             // 13. Total Members Count (Combined)
-            // Synchronized with UI list logic: include all leads for Field Visitors
+            // Reverted: Show only actual Member collection count for Field Visitors
             Promise.all([
                 Member.countDocuments(isManager ? branchMatch : { fieldVisitorId: userId }),
                 ExtraMember.countDocuments({
                     ...(isManager ? branchMatch : { collectedBy: userId }),
-                    // If manager, we might still want to filter, but for FVs we want ALL
-                    ...(isManager ? { memberCode: { $ne: null, $ne: '' } } : {})
+                    // If manager, we might still want to filter, but for FVs we now exclude leads from the main count
+                    memberCode: { $ne: null, $ne: '' }
                 })
             ]).then(([a, b]) => a + b)
         ]);
