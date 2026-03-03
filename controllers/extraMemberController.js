@@ -122,7 +122,7 @@ exports.getExtraMembers = async (req, res) => {
             const requestedVisitorId = req.query.fieldVisitorId;
             if (requestedVisitorId) {
                 // Manager can filter by specific field visitor
-                query = { collectedBy: requestedVisitorId };
+                query = { collectedBy: mongoose.Types.ObjectId.isValid(requestedVisitorId) ? new mongoose.Types.ObjectId(requestedVisitorId) : requestedVisitorId };
             } else {
                 // Manager sees all leads from their branch's FVs + themselves
                 const FieldVisitor = require('../models/FieldVisitor');

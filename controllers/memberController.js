@@ -272,7 +272,7 @@ const getMembers = async (req, res) => {
         };
 
         const [extraResults, memberResults] = await Promise.all([
-            (role === 'manager' && queryFvId) ? [] : fetchWithTxs(ExtraMember, extraMatch),
+            fetchWithTxs(ExtraMember, extraMatch),
             fetchWithTxs(Member, memberMatch)
         ]);
 
