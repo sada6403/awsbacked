@@ -285,13 +285,16 @@ const getFieldVisitors = async (req, res) => {
 // @access  Private
 const getFieldVisitorById = async (req, res) => {
     try {
+        console.log(`[getFieldVisitorById] Fetching details for ID: ${req.params.id}`);
         const fieldVisitor = await FieldVisitor.findById(req.params.id)
             .select('-password -__v') // Exclude password and version
             .lean();
 
         if (fieldVisitor) {
+            console.log(`[getFieldVisitorById] Found Visitor: ${fieldVisitor.name}, Email: ${fieldVisitor.email}`);
             res.json(fieldVisitor);
         } else {
+            console.log(`[getFieldVisitorById] Visitor NOT found for ID: ${req.params.id}`);
             res.status(404).json({ message: 'Field Visitor not found' });
         }
     } catch (error) {

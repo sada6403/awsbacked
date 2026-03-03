@@ -238,7 +238,8 @@ const getMembers = async (req, res) => {
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
         const fetchWithTxs = async (Model, match) => {
-            return Model.aggregate([
+            console.log(`[getMembers] Querying ${Model.modelName} with match:`, JSON.stringify(match));
+            const results = await Model.aggregate([
                 { $match: match },
                 { $sort: { [Model.modelName === 'Member' ? 'registeredAt' : 'collectedAt']: -1 } },
                 { $limit: 100 },
@@ -269,8 +270,11 @@ const getMembers = async (req, res) => {
                     }
                 }
             ]);
+            console.log(`[getMembers] ${Model.modelName} results: ${results.length}`);
+            return results;
         };
 
+        console.log(`[getMembers] Manager/FV Filter: ${role}, queryFvId: ${queryFvId}`);
         const [extraResults, memberResults] = await Promise.all([
             fetchWithTxs(ExtraMember, extraMatch),
             fetchWithTxs(Member, memberMatch)
