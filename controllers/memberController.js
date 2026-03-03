@@ -276,7 +276,8 @@ const getMembers = async (req, res) => {
         };
 
         const [extraResults, memberResults] = await Promise.all([
-            (role === 'manager' && queryFvId) ? [] : fetchWithTxs(ExtraMember, extraMatch),
+            // Strictly exclude Leads (ExtraMember) for Field Visitors in the main members list
+            (role === 'manager' && !queryFvId) ? fetchWithTxs(ExtraMember, extraMatch) : [],
             fetchWithTxs(Member, memberMatch)
         ]);
 

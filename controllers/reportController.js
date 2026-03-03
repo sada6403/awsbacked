@@ -609,16 +609,17 @@ const getDashboardStats = async (req, res) => {
                 .sort({ collectedAt: -1 })
                 .limit(10)
                 .lean(),
-            // 13. Total Members Count (Combined)
-            // Reverted: Show only actual Member collection count for Field Visitors
-            Promise.all([
-                Member.countDocuments(isManager ? branchMatch : { fieldVisitorId: userId }),
-                ExtraMember.countDocuments({
-                    ...(isManager ? branchMatch : { collectedBy: userId }),
-                    // If manager, we might still want to filter, but for FVs we now exclude leads from the main count
-                    memberCode: { $ne: null, $ne: '' }
-                })
-            ]).then(([a, b]) => a + b)
+            // 13. Total Members Count
+            // Reverted: Show ONLY actual Member collection count for Field Visitors
+            (isManager)
+                ? Promise.all([
+                    Member.countDocuments(branchMatch),
+                    ExtraMember.countDocuments({
+                        ...branchMatch,
+                        memberCode: { $ne: null, $ne: '' }
+                    })
+                ]).then(([a, b]) => a + b)
+                : Member.countDocuments({ fieldVisitorId: userId })
         ]);
 
         let buyAmount = 0;
