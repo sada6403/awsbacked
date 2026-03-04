@@ -252,7 +252,7 @@ const getFieldVisitors = async (req, res) => {
     const count = await FieldVisitor.countDocuments({ branchId });
 
     let query = FieldVisitor.find({ branchId })
-        .select('name userId phone branchId area status createdAt')
+        .select('name userId phone branchId area status email postalAddress address createdAt')
         .limit(50);
 
     const attachCounts = async (visitors) => {
