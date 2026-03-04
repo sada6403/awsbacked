@@ -340,8 +340,8 @@ const getFieldVisitorDashboard = async (req, res) => {
             ]),
             Promise.all([
                 Member.countDocuments({ fieldVisitorId }),
-                // ExtraMember (Leads) are now excluded from the primary Total Members count per user request
-            ]).then(([c1]) => c1),
+                ExtraMember.countDocuments({ collectedBy: fieldVisitorId, memberCode: { $exists: true, $ne: null, $ne: '' } })
+            ]).then(([c1, c2]) => c1 + c2),
             Notification.countDocuments({ userId: fieldVisitorId, isRead: false }),
             ExtraMember.countDocuments({
                 collectedBy: fieldVisitorId,
@@ -607,7 +607,10 @@ const getDashboardStats = async (req, res) => {
                         memberCode: { $ne: null, $ne: '' }
                     })
                 ]).then(([a, b]) => a + b)
-                : Member.countDocuments({ fieldVisitorId: userId })
+                : Promise.all([
+                    Member.countDocuments({ fieldVisitorId: userId }),
+                    ExtraMember.countDocuments({ collectedBy: userId, memberCode: { $ne: null, $ne: '' } })
+                ]).then(([a, b]) => a + b)
         ]);
 
         let buyAmount = 0;
