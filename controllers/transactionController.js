@@ -82,8 +82,12 @@ const createTransaction = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Member not found in any collection' });
         }
 
-        // Branch check - assuming ExtraMember has branchId (I added it to models/ExtraMember.js earlier)
-        if (member.branchId && member.branchId !== branchId) {
+        // Branch check - case-insensitive normalization to prevent "trinco" vs "TRINCO" mismatches
+        const normalizedMemberBranch = (member.branchId || '').toString().toLowerCase();
+        const normalizedRequestBranch = branchId.toLowerCase();
+
+        if (member.branchId && normalizedMemberBranch !== normalizedRequestBranch) {
+            console.error('[createTransaction] Branch mismatch. Member branch:', member.branchId, 'Request branch:', branchId);
             return res.status(403).json({ success: false, message: 'Member not in your branch' });
         }
 
@@ -97,7 +101,9 @@ const createTransaction = async (req, res) => {
                 console.error('[createTransaction] Field visitor not found:', fieldVisitorId);
                 return res.status(404).json({ success: false, message: 'Field visitor not found' });
             }
-            if (fv.branchId !== branchId) {
+
+            const normalizedFvBranch = (fv.branchId || '').toString().toLowerCase();
+            if (normalizedFvBranch !== normalizedRequestBranch) {
                 console.error('[createTransaction] FV branch mismatch. Req branch:', branchId, 'FV branch:', fv.branchId);
                 return res.status(403).json({ success: false, message: 'Field visitor not in your branch' });
             }
