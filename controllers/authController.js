@@ -6,10 +6,13 @@ const generateToken = require('../utils/generateToken');
 // @route   POST /api/auth/login
 // @access  Public
 const loginUser = async (req, res, next) => {
+    console.log('\n[DEBUG] Login Attempt Started');
+    console.log('[DEBUG] Body:', JSON.stringify(req.body, null, 2));
     try {
         const { username, password, role } = req.body; // username can be email or userId
 
         if (!username || !password || !role) {
+            console.log('[DEBUG] Missing credentials');
             res.status(400);
             throw new Error('Please provide all credentials');
         }
