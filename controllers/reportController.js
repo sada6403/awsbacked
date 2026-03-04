@@ -9,31 +9,16 @@ const mongoose = require('mongoose');
 
 const BranchManager = require('../models/BranchManager');
 
-let dashboardCache;
-try {
-    const NodeCache = require('node-cache');
-    // Cache dashboard stats for 10 minutes (600 seconds) to prevent heavy DB aggregations
-    dashboardCache = new NodeCache({ stdTTL: 600, checkperiod: 620 });
-    console.log('[reportController] NodeCache initialized successfully.');
-} catch (e) {
-    console.warn('[reportController] node-cache not found. Dashboard caching is disabled. Use "npm install" to enable.');
-    // Mock cache object to prevent crashes
-    dashboardCache = {
-        has: () => false,
-        get: () => null,
-        set: () => null,
-        flushAll: () => null
-    };
-}
+const cacheService = require('../services/cacheService');
 
 /**
  * Force clear the dashboard cache (e.g. after registration)
  */
 const clearDashboardCache = () => {
-    if (dashboardCache && typeof dashboardCache.flushAll === 'function') {
-        dashboardCache.flushAll();
-        console.log('[reportController] Dashboard cache cleared.');
-    }
+    cacheService.delStartWith('manager_dash_');
+    cacheService.delStartWith('fv_dash_');
+    cacheService.delStartWith('stats_');
+    console.log('[reportController] Dashboard caches cleared.');
 };
 
 const branchFilter = (user) => ({ branchId: user.branchId || 'default-branch' });
@@ -55,9 +40,10 @@ const getManagerDashboard = async (req, res) => {
         const branchMatch = { branchId: { $in: [branchId, branchId.toUpperCase(), 'default-branch'] } };
 
         const cacheKey = `manager_dash_${req.user._id}_${branchId}`;
-        if (dashboardCache.has(cacheKey)) {
+        const cachedData = cacheService.get(cacheKey);
+        if (cachedData) {
             console.log(`[getManagerDashboard] Serving from Cache: ${cacheKey}`);
-            return res.json(dashboardCache.get(cacheKey));
+            return res.json(cachedData);
         }
 
         // Efficiently fetch all branch data in parallel
@@ -244,7 +230,7 @@ const getManagerDashboard = async (req, res) => {
             }
         };
 
-        dashboardCache.set(cacheKey, responsePayload);
+        cacheService.set(cacheKey, responsePayload);
         res.json(responsePayload);
     } catch (error) {
         console.error('[getManagerDashboard] Error:', error.message);
@@ -270,9 +256,10 @@ const getFieldVisitorDashboard = async (req, res) => {
         if (fieldVisitorId) fieldVisitorId = new mongoose.Types.ObjectId(fieldVisitorId);
 
         const cacheKey = `fv_dash_${fieldVisitorId}_${branchId}`;
-        if (dashboardCache.has(cacheKey)) {
+        const cachedData = cacheService.get(cacheKey);
+        if (cachedData) {
             console.log(`[getFieldVisitorDashboard] Serving from Cache: ${cacheKey}`);
-            return res.json(dashboardCache.get(cacheKey));
+            return res.json(cachedData);
         }
 
         // 1. Fetch Field Visitor info for wallet balance
@@ -427,7 +414,7 @@ const getFieldVisitorDashboard = async (req, res) => {
             }
         };
 
-        dashboardCache.set(cacheKey, responsePayload);
+        cacheService.set(cacheKey, responsePayload);
         res.json(responsePayload);
     } catch (error) {
         console.error('[getFieldVisitorDashboard] Error:', error.message);
@@ -533,9 +520,10 @@ const getDashboardStats = async (req, res) => {
         };
 
         const cacheKey = `stats_${userId}_${branchId}_${currentYear}_${currentMonth}`;
-        if (dashboardCache.has(cacheKey)) {
+        const cachedData = cacheService.get(cacheKey);
+        if (cachedData) {
             console.log(`[getDashboardStats] Serving from Cache: ${cacheKey}`);
-            return res.json(dashboardCache.get(cacheKey));
+            return res.json(cachedData);
         }
 
         console.log(`[getDashboardStats] User: ${userId} (${req.user?.role}) Branch: ${branchId} Month: ${currentMonth} (Cache Miss)`);
@@ -742,7 +730,7 @@ const getDashboardStats = async (req, res) => {
             }
         };
 
-        dashboardCache.set(cacheKey, responsePayload);
+        cacheService.set(cacheKey, responsePayload);
         res.json(responsePayload);
     } catch (error) {
         console.error('[getDashboardStats] Error:', error.message);

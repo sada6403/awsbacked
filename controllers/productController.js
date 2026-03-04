@@ -1,12 +1,20 @@
 const Product = require('../models/Product');
 const BranchProduct = require('../models/BranchProduct');
+const cacheService = require('../services/cacheService');
 
 // @desc    Get all products (with branch specific prices)
 // @route   GET /api/products
 // @access  Private (Protected)
 const getProducts = async (req, res) => {
     try {
-        const branchId = req.user?.branchId; // from auth middleware
+        const branchId = req.user?.branchId || 'default-branch'; // from auth middleware
+
+        const cacheKey = `products_${branchId}`;
+        const cached = cacheService.get(cacheKey);
+        if (cached) {
+            console.log(`[getProducts] Serving from Cache: ${cacheKey}`);
+            return res.json(cached);
+        }
 
         // 1. Get all base products
         const products = await Product.find({}).lean();
@@ -31,6 +39,7 @@ const getProducts = async (req, res) => {
             };
         });
 
+        cacheService.set(cacheKey, mergedProducts, 3600); // Cache for 1 hour
         res.json(mergedProducts);
     } catch (error) {
         console.error('Error fetching products:', error);
@@ -63,6 +72,9 @@ const updateBranchPrice = async (req, res) => {
             },
             { new: true, upsert: true, setDefaultsOnInsert: true }
         );
+
+        // Invalidate product cache for this branch
+        cacheService.del(`products_${branchId}`);
 
         res.json({ success: true, data: updated });
     } catch (error) {

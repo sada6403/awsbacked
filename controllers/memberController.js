@@ -9,6 +9,7 @@ const { generateMemberCode } = require('../utils/memberHelper');
 const { emitMemberEvent } = require('../utils/socketService');
 const { clearDashboardCache } = require('./reportController');
 const { uploadBase64Image } = require('../services/s3Service');
+const cacheService = require('../services/cacheService');
 
 // @desc    Register a member
 // @route   POST /api/members
@@ -179,8 +180,9 @@ const registerMember = async (req, res, next) => {
             }
         }
 
-        // Clear dashboard cache to show the new member immediately
+        // Clear dashboard and member caches to show the new member immediately
         clearDashboardCache();
+        cacheService.delStartWith('members_');
 
         res.status(201).json({
             success: true,
@@ -203,6 +205,13 @@ const getMembers = async (req, res) => {
         const branchId = req.user?.branchId || 'default-branch';
         const userId = req.user?._id;
         const role = req.user?.role;
+
+        const cacheKey = `members_${role}_${userId}_${branchId}_${queryFvId || 'all'}_${search || 'none'}`;
+        const cached = cacheService.get(cacheKey);
+        if (cached) {
+            console.log(`[getMembers] Serving from Cache: ${cacheKey}`);
+            return res.json(cached);
+        }
 
         let extraMatch = {};
         let memberMatch = {};
@@ -360,6 +369,8 @@ const getMembers = async (req, res) => {
         fs.appendFileSync('debug_members.txt', `[${new Date().toISOString()}]\n${debugOutput}\n\n`);
 
         res.json({ success: true, count: data.length, data });
+        // Cache for 5 minutes
+        cacheService.set(cacheKey, { success: true, count: data.length, data }, 300);
     } catch (error) {
         console.error('[getMembers] Error:', error);
         res.status(500).json({ success: false, message: 'Server Error', error: error.message, stack: error.stack });
@@ -404,10 +415,11 @@ const updateMember = async (req, res) => {
         // EMIT REAL-TIME UPDATE
         emitMemberEvent('memberUpdated', updatedMember);
 
-        // Clear dashboard cache to show updates immediately
+        // Clear dashboard and member caches
         clearDashboardCache();
+        cacheService.delStartWith('members_');
 
-        res.json({ success: true, data: updatedMember, message: 'Member updated successfully' });
+        res.json({ success: true, data: updated, message: 'Member updated successfully' });
     } catch (error) {
         console.error('Update Member Error:', error);
         res.status(500).json({ success: false, message: 'Failed to update member', error: error.message });
