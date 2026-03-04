@@ -34,9 +34,16 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 1. Middleware
+// Request logging middleware - MOVED TO TOP to capture raw requests
+app.use((req, res, next) => {
+    console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    next();
+});
+
 // Enhanced CORS configuration for Flutter app
 app.use(cors({
-    origin: '*', // Allow all origins (adjust in production)
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
@@ -44,20 +51,18 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' })); // Increased limit for signature images
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
+// Log body after parsing
+app.use((req, res, next) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        console.log('[DEBUG] Parsed Body:', JSON.stringify(req.body, null, 2));
+    }
+    next();
+});
+
 // Serve static files (PDF bills)
 const path = require('path');
 app.use('/bills', express.static(path.join(__dirname, 'public', 'bills')));
 app.use('/members', express.static(path.join(__dirname, 'public', 'members')));
-
-// Request logging middleware
-app.use((req, res, next) => {
-    console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.path}`);
-    console.log('Headers:', req.headers);
-    if (req.body && Object.keys(req.body).length > 0) {
-        console.log('Body:', JSON.stringify(req.body, null, 2));
-    }
-    next();
-});
 
 // 2. Connect to MongoDB Atlas with automatic fallback to local MongoDB
 // Why fallback exists:
