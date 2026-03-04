@@ -147,6 +147,11 @@ app.get('/api/health', (req, res) => {
     res.status(200).json({ ok: true, timestamp: new Date().toISOString() });
 });
 
+app.post('/api/test-echo', (req, res) => {
+    console.log('[DEBUG] Echo Request Received');
+    res.status(200).json({ success: true, received: req.body });
+});
+
 // Fallback: GET /api/members (for backward compatibility)
 // Note: This might conflict with memberRoutes, so comment out if needed
 // app.get('/api/members', async (req, res) => {
