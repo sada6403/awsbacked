@@ -8,6 +8,7 @@ const { generateMemberPDF } = require('../utils/memberPdfGenerator');
 const { generateMemberCode } = require('../utils/memberHelper');
 const { emitMemberEvent } = require('../utils/socketService');
 const { clearDashboardCache } = require('./reportController');
+const { uploadBase64Image } = require('../services/s3Service');
 
 // @desc    Register a member
 // @route   POST /api/members
@@ -53,6 +54,12 @@ const registerMember = async (req, res, next) => {
         }
 
         if (newMember) {
+            // Upload images to S3 if they are base64
+            if (profileImage) newMember.profileImage = await uploadBase64Image(profileImage, 'profile');
+            if (signatureImage) newMember.signatureImage = await uploadBase64Image(signatureImage, 'signatures');
+            if (idFrontImage) newMember.idFrontImage = await uploadBase64Image(idFrontImage, 'ids');
+            if (idBackImage) newMember.idBackImage = await uploadBase64Image(idBackImage, 'ids');
+
             newMember.name = name;
             newMember.address = address;
             newMember.mobile = mobile;
@@ -60,13 +67,9 @@ const registerMember = async (req, res, next) => {
             newMember.nic = nic;
             newMember.memberCode = generatedMemberCode;
             newMember.registrationData = registrationData;
-            newMember.profileImage = profileImage;
             newMember.memberType = memberType;
             newMember.registrationFeePaid = registrationFeePaid;
             newMember.biometricData = biometricData;
-            newMember.signatureImage = signatureImage;
-            newMember.idFrontImage = idFrontImage;
-            newMember.idBackImage = idBackImage;
             newMember.collectedAt = new Date();
             await newMember.save(); // Only save to ExtraMember if it was already a lead
         }
@@ -87,13 +90,13 @@ const registerMember = async (req, res, next) => {
                     area: req.user?.area || 'default-area',
                     registrationData,
                     registeredAt: new Date(),
-                    profileImage,
+                    profileImage: await uploadBase64Image(profileImage, 'profile'),
                     memberType,
                     registrationFeePaid,
                     biometricData,
-                    signatureImage,
-                    idFrontImage,
-                    idBackImage,
+                    signatureImage: await uploadBase64Image(signatureImage, 'signatures'),
+                    idFrontImage: await uploadBase64Image(idFrontImage, 'ids'),
+                    idBackImage: await uploadBase64Image(idBackImage, 'ids'),
                     walletBalance: 0
                 };
                 savedMember = await Member.findOneAndUpdate(
@@ -388,7 +391,12 @@ const updateMember = async (req, res) => {
         if (updates.address) member.address = updates.address;
         if (updates.nic) member.nic = updates.nic;
         if (updates.biometricData) member.biometricData = updates.biometricData;
-        if (updates.signatureImage) member.signatureImage = updates.signatureImage;
+
+        if (updates.profileImage) member.profileImage = await uploadBase64Image(updates.profileImage, 'profile');
+        if (updates.signatureImage) member.signatureImage = await uploadBase64Image(updates.signatureImage, 'signatures');
+        if (updates.idFrontImage) member.idFrontImage = await uploadBase64Image(updates.idFrontImage, 'ids');
+        if (updates.idBackImage) member.idBackImage = await uploadBase64Image(updates.idBackImage, 'ids');
+
         if (updates.registrationData) member.registrationData = { ...member.registrationData, ...updates.registrationData };
 
         const updatedMember = await member.save();
