@@ -47,7 +47,7 @@ const sendPushNotification = async (token, title, body, data = {}) => {
                 defaultVibrateTimings: true,
                 defaultLightSettings: true,
                 notificationPriority: 'PRIORITY_MAX',
-                visibility: 'VISIBILITY_PUBLIC',
+                visibility: 'PUBLIC',
                 clickAction: 'FLUTTER_NOTIFICATION_CLICK'
             }
         },

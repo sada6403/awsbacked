@@ -87,8 +87,16 @@ const createTransaction = async (req, res) => {
         const normalizedRequestBranch = branchId.toLowerCase();
 
         if (member.branchId && normalizedMemberBranch !== normalizedRequestBranch) {
-            console.error('[createTransaction] Branch mismatch. Member branch:', member.branchId, 'Request branch:', branchId);
-            return res.status(403).json({ success: false, message: 'Member not in your branch' });
+            // Fallback: If the member was added by this manager (ManagersMember or ExtraMember), allow it
+            const addedBy = member.addedBy || member.collectedBy;
+            const isOwner = addedBy && addedBy.toString() === req.user._id.toString();
+
+            if (isOwner) {
+                console.log(`[createTransaction] Branch mismatch ignored as a fallback (IsOwner: true). Member branch: ${member.branchId}, Req branch: ${branchId}`);
+            } else {
+                console.error('[createTransaction] Branch mismatch. Member branch:', member.branchId, 'Request branch:', branchId);
+                return res.status(403).json({ success: false, message: 'Member not in your branch' });
+            }
         }
 
         let fv = null;
