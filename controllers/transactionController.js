@@ -412,6 +412,12 @@ const createTransaction = async (req, res) => {
             console.error('[createTransaction] Notification Preparation failed:', notifyErr.message);
         }
 
+        // Clear dashboard caches to ensure updated stats
+        const cacheService = require('../services/cacheService');
+        cacheService.delStartWith('manager_dash_');
+        cacheService.delStartWith('stats_');
+        if (fv) cacheService.delStartWith('fv_dash_');
+
         console.log('[createTransaction] Success! Returning response for bill:', saved.billNumber);
         res.status(201).json({
             success: true,
