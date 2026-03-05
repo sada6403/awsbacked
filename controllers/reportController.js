@@ -589,7 +589,10 @@ const getDashboardStats = async (req, res) => {
             // 11. Recent Transactions
             Transaction.find(isManager ? branchMatch : { fieldVisitorId: userId }).sort({ date: -1 }).limit(10).lean(),
             // 12. Recent Leads (Extra Members)
-            ExtraMember.find({ collectedBy: userId })
+            ExtraMember.find({
+                collectedBy: userId,
+                memberCode: { $ne: null, $ne: '' }
+            })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
                 .sort({ collectedAt: -1 })
                 .limit(10)

@@ -235,6 +235,12 @@ const getMembers = async (req, res) => {
             memberMatch.fieldVisitorId = userOid;
         }
 
+        // --- STRICT MEMBER FILTERING ---
+        // Only include ExtraMember records that have been assigned a memberCode (meaning they are verified members)
+        extraMatch.memberCode = { $ne: null, $ne: '' };
+        // -------------------------------
+
+
         if (search) {
             const searchRegex = { $regex: search, $options: 'i' };
             const searchMatch = {
@@ -311,9 +317,13 @@ const getMembers = async (req, res) => {
 
             const mobile = m.mobile || '';
             const normalizedName = (m.name || '').trim().toLowerCase();
-            // Robust member code generation: Use 'M-' prefix for both to bypass frontend filtering of 'L-' leads
-            // This ensures leads show up in the Field Visitor's main member list as requested.
-            const code = m.memberCode || (isExtra ? `M-${mobile.slice(-4)}` : `M-${mobile.slice(-4)}`);
+
+            // Strictly use the stored memberCode. If it's missing, it's a lead and shouldn't be in this list.
+            const code = m.memberCode;
+            if (isExtra && !code) {
+                // This is a safety check: leads should already be filtered out by the aggregate match
+                return;
+            }
 
             // Use composite key to prevent merging different people with same mobile
             const key = `${mobile}|${normalizedName}`;
