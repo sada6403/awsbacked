@@ -200,11 +200,23 @@ exports.transferCash = async (req, res) => {
 exports.getWalletHistory = async (req, res) => {
     try {
         const userId = req.user._id;
-        const history = await WalletTransaction.find({ userId })
+        let history = await WalletTransaction.find({ userId })
             .select('-__v -updatedAt')
             .sort({ createdAt: -1 })
             .limit(50)
             .lean();
+
+        // Backend workaround for APK time bug (double-shifting 5.5 hours)
+        // Subtract 5 hours and 30 minutes from createdAt to counteract the Flutter app adding it again.
+        history = history.map(tx => {
+            if (tx.createdAt) {
+                const date = new Date(tx.createdAt);
+                date.setMinutes(date.getMinutes() - 330); // 5.5 hours = 330 minutes
+                return { ...tx, createdAt: date };
+            }
+            return tx;
+        });
+
         res.json({ success: true, history });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
