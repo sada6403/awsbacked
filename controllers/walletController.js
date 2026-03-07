@@ -489,18 +489,27 @@ exports.sendDonorOTP = async (req, res) => {
 // @route   POST /api/wallet/donor/verify-and-add
 // @access  Private (Manager only)
 exports.verifyDonorOTPAndAddCash = async (req, res) => {
+    const useTransactions = process.env.USE_TRANSACTIONS !== 'false';
+    let session = null;
+
     try {
         const { phone, otp, amount, name, idNumber, role } = req.body;
         const managerId = req.user._id;
 
-        const otpDoc = await Otp.findOne({ identifier: phone, otp });
-        if (!otpDoc || otpDoc.expires < new Date()) {
-            return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+        if (useTransactions) {
+            session = await mongoose.startSession();
+            session.startTransaction();
         }
 
-        // Check if this is a Field Visitor (Phone + ID/NIC match)
-        // Ensure to check within the same branch as the manager (optional but safer)
-        const manager = await BranchManager.findById(managerId);
+        const queryOptions = session ? { session } : {};
+
+        const otpDoc = await Otp.findOne({ identifier: phone, otp }).session(session ? session : null);
+        if (!otpDoc || otpDoc.expires < new Date()) {
+            throw new Error('Invalid or expired OTP');
+        }
+
+        const manager = await BranchManager.findById(managerId).session(session ? session : null);
+        if (!manager) throw new Error('Manager not found');
 
         let fv = null;
         if (idNumber) {
@@ -508,134 +517,138 @@ exports.verifyDonorOTPAndAddCash = async (req, res) => {
                 phone,
                 nic: idNumber,
                 branchId: manager.branchId
-            });
+            }).session(session ? session : null);
         }
 
         if (fv) {
             // CASE 1: Field Visitor Cash Collection
-            // Check Balance
             if ((fv.walletBalance || 0) < Number(amount)) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Insufficient balance in Field Visitor's wallet. Available: Rs. ${fv.walletBalance}`
-                });
+                throw new Error(`Insufficient balance in Field Visitor's wallet. Available: Rs. ${fv.walletBalance}`);
             }
 
-            // Perform Transfer logic
-            // 1. Deduct from FV
-            fv.walletBalance = (fv.walletBalance || 0) - Number(amount);
-            await fv.save();
+            // Perform Atomic Updates
+            const updatedFV = await FieldVisitor.findByIdAndUpdate(
+                fv._id,
+                { $inc: { walletBalance: -Number(amount) } },
+                { new: true, ...queryOptions }
+            );
 
-            // 2. Add to Manager
-            manager.walletBalance = (manager.walletBalance || 0) + Number(amount);
-            await manager.save();
+            const updatedManager = await BranchManager.findByIdAndUpdate(
+                managerId,
+                { $inc: { walletBalance: Number(amount) } },
+                { new: true, ...queryOptions }
+            );
 
-            // 3. Record Transactions
-            // TX for FV (Outgoing)
+            // Record Transactions
             const txFV = new WalletTransaction({
                 userId: fv._id,
                 userModel: 'FieldVisitor',
                 type: 'transfer_out',
                 amount: Number(amount),
-                balanceAfter: fv.walletBalance,
+                balanceAfter: updatedFV.walletBalance,
                 reference: `Cash Collection by Manager (${manager.fullName})`,
                 relatedUserId: managerId,
                 relatedUserModel: 'BranchManager'
             });
-            await txFV.save();
+            await txFV.save(queryOptions);
 
-            // TX for Manager (Incoming)
             const txMgr = new WalletTransaction({
                 userId: managerId,
                 userModel: 'BranchManager',
-                type: 'transfer_in', // Or 'input' but 'transfer_in' is more accurate for internal movement
+                type: 'transfer_in',
                 amount: Number(amount),
-                balanceAfter: manager.walletBalance,
+                balanceAfter: updatedManager.walletBalance,
                 reference: `Cash Collection from ${fv.name} (FV)`,
                 relatedUserId: fv._id,
                 relatedUserModel: 'FieldVisitor'
             });
-            await txMgr.save();
+            await txMgr.save(queryOptions);
 
-            // Clear OTP
-            await Otp.deleteOne({ _id: otpDoc._id });
+            // Notify Field Visitor (Fire & Forget outside transaction commit)
+            const notifyFV = async () => {
+                try {
+                    const { createAndSendNotification } = require('../utils/notificationHelper');
+                    await createAndSendNotification({
+                        title: 'Cash Deducted',
+                        body: `Manager collected Rs. ${amount} from your wallet.`,
+                        date: new Date(),
+                        userId: fv._id,
+                        userRole: 'field_visitor',
+                        fieldVisitorId: fv._id,
+                        branchId: fv.branchId
+                    });
+                    if (fv.phone) {
+                        await smsService.sendGeneralSMS(fv.phone, `Nature Farming: Manager collected Rs. ${amount} from your wallet. New Balance: Rs. ${updatedFV.walletBalance}.`);
+                    }
+                } catch (e) {
+                    console.error('FV Notification Error:', e.message);
+                }
+            };
 
-            // Notify FV
-            try {
-                const msg = `Nature Farming: Manager collected Rs. ${amount} from your wallet. New Balance: Rs. ${fv.walletBalance}.`;
-                await smsService.sendGeneralSMS(fv.phone, msg);
-            } catch (e) {
-                console.error('SMS Error:', e.message);
-            }
+            if (useTransactions && session) await session.commitTransaction();
 
-            // Notify Field Visitor
-            const { createAndSendNotification } = require('../utils/notificationHelper');
-            await createAndSendNotification({
-                title: 'Cash Deducted',
-                body: `Manager collected Rs. ${amount} from your wallet.`,
-                date: new Date(),
-                userId: fv._id,
-                userRole: 'field_visitor',
-                fieldVisitorId: fv._id,
-                branchId: fv.branchId
-            });
-
-            // Notify Manager
-            await createAndSendNotification({
-                title: 'Cash Collection',
-                body: `Collected Rs. ${amount} from ${fv.name}.`,
-                date: new Date(),
-                userId: managerId,
-                userRole: 'manager',
-                managerId: managerId,
-                branchId: manager.branchId
-            });
+            // Send notifications after success
+            notifyFV();
 
             return res.json({
                 success: true,
-                balance: manager.walletBalance,
+                balance: updatedManager.walletBalance,
                 message: `Successfully collected Rs. ${amount} from ${fv.name}`
             });
 
         } else {
-            // CASE 2: External Donor (Standard Flow)
-            let donor = await CashDonor.findOne({ phone });
+            // CASE 2: External Donor
+            let donor = await CashDonor.findOne({ phone }).session(session ? session : null);
             if (!donor) {
                 donor = new CashDonor({ name, phone, idNumber, role });
-                await donor.save();
+                await donor.save(queryOptions);
             }
 
-            manager.walletBalance = (manager.walletBalance || 0) + Number(amount);
-            await manager.save();
+            const updatedManager = await BranchManager.findByIdAndUpdate(
+                managerId,
+                { $inc: { walletBalance: Number(amount) } },
+                { new: true, ...queryOptions }
+            );
 
             const walletTx = new WalletTransaction({
                 userId: managerId,
                 userModel: 'BranchManager',
                 type: 'input',
                 amount: Number(amount),
-                balanceAfter: manager.walletBalance,
-                reference: `Cash from Donor: ${donor.name} (${donor.role})`
+                balanceAfter: updatedManager.walletBalance,
+                reference: `Cash from Donor: ${donor.name} (${donor.role || 'N/A'})`
             });
-            await walletTx.save();
+            await walletTx.save(queryOptions);
+
+            if (useTransactions && session) await session.commitTransaction();
 
             // Notify Manager
-            const { createAndSendNotification } = require('../utils/notificationHelper');
-            await createAndSendNotification({
-                title: 'Cash Received (Donor)',
-                body: `Received Rs. ${amount} from ${donor.name} (${donor.role}).`,
-                date: new Date(),
-                userId: managerId,
-                userRole: 'manager',
-                managerId: managerId,
-                branchId: manager.branchId
-            });
+            try {
+                const { createAndSendNotification } = require('../utils/notificationHelper');
+                await createAndSendNotification({
+                    title: 'Cash Received (Donor)',
+                    body: `Received Rs. ${amount} from ${donor.name} (${donor.role || 'Donor'}).`,
+                    date: new Date(),
+                    userId: managerId,
+                    userRole: 'manager',
+                    managerId: managerId,
+                    branchId: manager.branchId
+                });
+            } catch (notifErr) {
+                console.error('Donor Notification Error:', notifErr.message);
+            }
 
-            await Otp.deleteOne({ _id: otpDoc._id });
-
-            res.json({ success: true, balance: manager.walletBalance, donor });
+            res.json({ success: true, balance: updatedManager.walletBalance, donor });
         }
+
+        // Clean up OTP session-independently or within if possible
+        await Otp.deleteOne({ _id: otpDoc._id });
+
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        if (useTransactions && session) await session.abortTransaction();
+        res.status(400).json({ success: false, message: error.message });
+    } finally {
+        if (session) session.endSession();
     }
 };
 
