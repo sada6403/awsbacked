@@ -9,6 +9,7 @@ const smsService = require('../services/smsService');
 const mongoose = require('mongoose');
 const Notification = require('../models/Notification');
 const CompanyTransfer = require('../models/CompanyTransfer');
+const { clearDashboardCache } = require('./reportController');
 
 // @desc    Get current user's wallet balance
 // @route   GET /api/wallet/balance
@@ -82,6 +83,8 @@ exports.inputCash = async (req, res) => {
             managerId: userId,
             branchId: manager.branchId
         });
+
+        clearDashboardCache();
 
         res.json({ success: true, balance: manager.walletBalance, transaction: walletTx });
     } catch (error) {
@@ -177,6 +180,7 @@ exports.transferCash = async (req, res) => {
             console.error('Wallet Transfer SMS Error:', smsErr.message);
         }
 
+        clearDashboardCache();
         res.json({ success: true, managerBalance: manager.walletBalance });
     } catch (error) {
         if (useTransactions && session) {
@@ -414,6 +418,8 @@ exports.approveWalletRequest = async (req, res) => {
             console.error('Approval Notification Error:', notifErr.message);
         }
 
+        clearDashboardCache();
+
         res.status(200).json({
             success: true,
             message: 'Request approved and cash transferred successfully.',
@@ -641,6 +647,8 @@ exports.verifyDonorOTPAndAddCash = async (req, res) => {
             res.json({ success: true, balance: updatedManager.walletBalance, donor });
         }
 
+        clearDashboardCache();
+
         // Clean up OTP session-independently or within if possible
         await Otp.deleteOne({ _id: otpDoc._id });
 
@@ -797,6 +805,8 @@ exports.approveCompanyTransfer = async (req, res) => {
         } catch (notificationError) {
             console.error('Notification error:', notificationError);
         }
+
+        clearDashboardCache();
 
         res.json({
             success: true,
