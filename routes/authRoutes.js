@@ -15,5 +15,6 @@ router.route('/manager/:id')
 // OTP Routes
 router.post('/otp/generate', smsController.generateOtp);
 router.post('/otp/verify', smsController.verifyOtp);
+router.post('/verify-otp', smsController.verifyOtp); // Compatibility route for older app versions
 
 module.exports = router;
