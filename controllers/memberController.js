@@ -157,7 +157,7 @@ const registerMember = async (req, res, next) => {
             try {
                 const fv = await FieldVisitor.findById(req.user._id);
                 if (fv) {
-                    const bonusAmount = 4500;
+                    const bonusAmount = 1000;
                     fv.walletBalance = (fv.walletBalance || 0) + bonusAmount;
                     await fv.save();
 
@@ -171,7 +171,7 @@ const registerMember = async (req, res, next) => {
                     });
                     await walletTx.save();
 
-                    console.log(`[Wallet] Credited 4500 to FV ${fv.name} for member ${savedMember.name}`);
+                    console.log(`[Wallet] Credited 1000 to FV ${fv.name} for member ${savedMember.name}`);
                 }
             } catch (walletErr) {
                 console.error('[Wallet] Bonus Credit Error:', walletErr);
