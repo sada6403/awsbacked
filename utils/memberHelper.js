@@ -4,7 +4,7 @@ const BranchManager = require('../models/BranchManager');
 
 /**
  * Generates a custom member code based on the branch name.
- * Format: FA[BranchCode][Sequence] (e.g., FAKA001)
+ * Format: FA[BranchCode][Sequence] (e.g., FAKM001)
  */
 async function generateMemberCode(branchId, userRole, userData) {
     if (userRole === 'manager') {
@@ -52,7 +52,8 @@ async function generateMemberCode(branchId, userRole, userData) {
 
     if (branchNameStr) {
         const nameUpper = branchNameStr.toUpperCase();
-        if (nameUpper.includes('KALMUNAI')) branchCode = 'KA';
+        if (nameUpper.includes('KALMUNAI')) branchCode = 'KM';
+        else if (nameUpper.includes('KANDAWALAI')) branchCode = 'KA';
         else if (nameUpper.includes('TRINCO')) branchCode = 'TR';
         else if (nameUpper.includes('KONDAVIL')) branchCode = 'JK';
         else if (nameUpper.includes('SAVAGACHERI') || nameUpper.includes('CHAVAKACHCHERI')) branchCode = 'JS';
