@@ -150,6 +150,7 @@ const registerMember = async (req, res, next) => {
         }
 
         // EMIT REAL-TIME UPDATE (Targeted rooms to prevent cross-branch leakage)
+        const fieldVisitorId = req.user._id;
         emitMemberEvent('memberCreated', savedMember, `visitor_${fieldVisitorId}`);
         emitMemberEvent('memberCreated', savedMember, `branch_${branchId}`);
 
@@ -423,8 +424,14 @@ const updateMember = async (req, res) => {
 
         const updatedMember = await member.save();
 
-        // EMIT REAL-TIME UPDATE
-        emitMemberEvent('memberUpdated', updatedMember);
+        // EMIT REAL-TIME UPDATE (Targeted rooms)
+        const branchId = updatedMember.branchId || 'default-branch';
+        const fieldVisitorId = isExtra ? updatedMember.collectedBy : updatedMember.fieldVisitorId;
+        
+        if (fieldVisitorId) {
+            emitMemberEvent('memberUpdated', updatedMember, `visitor_${fieldVisitorId}`);
+        }
+        emitMemberEvent('memberUpdated', updatedMember, `branch_${branchId}`);
 
         // Clear dashboard and member caches
         clearDashboardCache();

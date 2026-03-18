@@ -506,6 +506,9 @@ const getDashboardStats = async (req, res) => {
 
         // Stats for pie charts
         const pieMatch = { ...branchMatch };
+        if (!isManager) {
+            pieMatch.fieldVisitorId = userId;
+        }
 
         // Date matching for strict current month filtering (matching memberController logic)
         const currentYear = now.getFullYear();
@@ -576,12 +579,11 @@ const getDashboardStats = async (req, res) => {
                 }
             }),
             // 9. Manager's own member count
-            isManager
-                ? Promise.all([
-                    ManagersMember.countDocuments({ addedBy: userId }),
-                    ExtraMember.countDocuments({ collectedBy: userId, memberCode: { $ne: null, $ne: '' } })
-                ]).then(([a, b]) => a + b)
-                : Promise.resolve(0),
+            Promise.all([
+                ManagersMember.countDocuments({ addedBy: userId }),
+                ExtraMember.countDocuments({ collectedBy: userId, memberCode: { $ne: null, $ne: '' } }),
+                Member.countDocuments({ fieldVisitorId: userId })
+            ]).then(([a, b, c]) => a + b + c),
             // 10. Total Transactions Count
             isManager
                 ? Transaction.countDocuments({ branchId })
@@ -597,8 +599,7 @@ const getDashboardStats = async (req, res) => {
                 .sort({ collectedAt: -1 })
                 .limit(10)
                 .lean(),
-            // 13. Total Members Count
-            // Reverted: Show ONLY actual Member collection count for Field Visitors
+            // 13. Total Members Count (Matches user expectations: 28 for FV-KA-005)
             (isManager)
                 ? Promise.all([
                     Member.countDocuments(branchMatch),
