@@ -149,8 +149,9 @@ const registerMember = async (req, res, next) => {
             console.error('Notification Creation Error:', notifErr);
         }
 
-        // EMIT REAL-TIME UPDATE
-        emitMemberEvent('memberCreated', savedMember);
+        // EMIT REAL-TIME UPDATE (Targeted rooms to prevent cross-branch leakage)
+        emitMemberEvent('memberCreated', savedMember, `visitor_${fieldVisitorId}`);
+        emitMemberEvent('memberCreated', savedMember, `branch_${branchId}`);
 
         // CREDIT WALLET FOR FIELD VISITOR (Only for New Members)
         if (req.user && (req.user.role === 'field_visitor' || req.user.role === 'field') && memberType === 'New') {

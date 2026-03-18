@@ -213,8 +213,9 @@ const verifyOtpsAndRegister = async (req, res) => {
             console.error('Notification (Manager) Error:', notifErr);
         }
 
-        // EMIT REAL-TIME UPDATE
-        emitMemberEvent('memberCreated', savedMember);
+        // EMIT REAL-TIME UPDATE (Targeted rooms)
+        emitMemberEvent('memberCreated', savedMember, `manager_${managerId}`);
+        emitMemberEvent('memberCreated', savedMember, `branch_${branchId}`);
 
         res.status(201).json({ success: true, message: 'Member registered successfully', data: savedMember, pdfUrl });
 
@@ -307,8 +308,9 @@ const registerMember = async (req, res) => {
             console.error('Notification (Manager Legacy) Error:', notifErr);
         }
 
-        // EMIT REAL-TIME UPDATE
-        emitMemberEvent('memberCreated', savedMember);
+        // EMIT REAL-TIME UPDATE (Targeted rooms)
+        emitMemberEvent('memberCreated', savedMember, `manager_${managerId}`);
+        emitMemberEvent('memberCreated', savedMember, `branch_${branchId}`);
 
         res.status(201).json({ success: true, message: 'Member registered successfully', data: savedMember, pdfUrl });
 
