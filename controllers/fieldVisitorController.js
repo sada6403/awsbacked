@@ -43,14 +43,12 @@ const sendVerificationEmail = async (req, res) => {
         try {
             await sendEmail(email, 'Nature Farming - Verification Code', html);
         } catch (emailError) {
-            console.error('Send Email Failed (Mocking success for dev):', emailError.message);
+            console.error('Send Email Failed:', emailError.message);
         }
 
         res.json({
             success: true,
-            message: 'OTP sent to email',
-            // Return OTP for dev/testing if mail fails
-            otp: otp
+            message: 'OTP sent to email'
         });
 
 
@@ -243,39 +241,61 @@ const registerFieldVisitor = async (req, res, next) => {
 // @route   GET /api/fieldvisitors
 // @access  Private
 const getFieldVisitors = async (req, res) => {
-    const branchId = req.user?.branchId || 'default-branch';
+    try {
+        const branchId = req.user?.branchId || 'default-branch';
+        const { page = 1, limit = 20, search = '' } = req.query;
+        
+        const pageNumber = Number(page);
+        const pageSize = Number(limit);
 
-    // Check if pagination is requested via query params
-    const pageNumber = req.query.pageNumber;
-    const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null;
+        // Build search query
+        const queryObj = { branchId };
+        if (search) {
+            queryObj.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { userId: { $regex: search, $options: 'i' } },
+                { phone: { $regex: search, $options: 'i' } }
+            ];
+        }
 
-    const count = await FieldVisitor.countDocuments({ branchId });
+        const count = await FieldVisitor.countDocuments(queryObj);
+        
+        const fieldVisitors = await FieldVisitor.find(queryObj)
+            .select('name userId phone branchId area status email postalAddress address createdAt memberCount leadCount')
+            .sort({ createdAt: -1 })
+            .limit(pageSize)
+            .skip(pageSize * (pageNumber - 1))
+            .lean();
 
-    let query = FieldVisitor.find({ branchId })
-        .select('name userId phone branchId area status email postalAddress address createdAt')
-        .limit(50);
+        // Map internal counts to what Flutter expects using real-time counts
+        const formattedVisitors = await Promise.all(fieldVisitors.map(async (v) => {
+            const mCount = await Member.countDocuments({ fieldVisitorId: v._id });
+            const lCount = await ExtraMember.countDocuments({ 
+                collectedBy: v._id,
+                $or: [{ memberCode: null }, { memberCode: '' }] 
+            });
 
-    const attachCounts = async (visitors) => {
-        return Promise.all(visitors.map(async (v) => {
-            const membersCount = await Member.countDocuments({ fieldVisitorId: v._id });
-            const leadsCount = await ExtraMember.countDocuments({ collectedBy: v._id });
-            return { ...v, membersCount, leadsCount };
+            console.log(`[getFieldVisitors] Real-time: ID: ${v._id} | Name: ${v.name} | mCount: ${mCount} | lCount: ${lCount} | Branch: ${branchId}`);
+            
+            return {
+                ...v,
+                membersCount: mCount,
+                leadsCount: lCount
+            };
         }));
-    };
 
-    // Only apply pagination if explicitly requested
-    if (pageNumber && pageSize) {
-        const page = Number(pageNumber);
-        query = query.limit(pageSize).skip(pageSize * (page - 1));
-        let fieldVisitors = await query.lean();
-        fieldVisitors = await attachCounts(fieldVisitors);
-        return res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize), total: count });
+        res.json({
+            success: true,
+            fieldVisitors: formattedVisitors,
+            page: pageNumber,
+            pages: Math.ceil(count / pageSize),
+            total: count,
+            hasMore: count > pageNumber * pageSize
+        });
+    } catch (error) {
+        console.error('getFieldVisitors Error:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch field visitors' });
     }
-
-    // Otherwise, return all field visitors (no limit)
-    let fieldVisitors = await query.lean();
-    fieldVisitors = await attachCounts(fieldVisitors);
-    res.json({ fieldVisitors, total: count });
 };
 
 // Notification require moved to top
@@ -290,7 +310,20 @@ const getFieldVisitorById = async (req, res) => {
             .lean();
 
         if (fieldVisitor) {
-            res.json(fieldVisitor);
+            // Include real-time counts in the profile view
+            const mCount = await Member.countDocuments({ fieldVisitorId: fieldVisitor._id });
+            const lCount = await ExtraMember.countDocuments({ 
+                collectedBy: fieldVisitor._id,
+                $or: [{ memberCode: null }, { memberCode: '' }] 
+            });
+
+            res.json({
+                ...fieldVisitor,
+                membersCount: mCount,
+                leadsCount: lCount,
+                memberCount: mCount, // Compatibility for both singular and plural field names
+                leadCount: lCount
+            });
         } else {
             res.status(404).json({ message: 'Field Visitor not found' });
         }

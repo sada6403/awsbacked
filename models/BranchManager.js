@@ -23,11 +23,9 @@ const BranchManagerSchema = new mongoose.Schema(
     branchName: {
       type: String,
       required: true,
-      enum: ['Kalmunai', 'Jaffna (Kondavil)', 'Jaffna (Savagacheri)', 'Jaffna (Chavakachcheri)', 'Trincomalee', 'Jaffna', 'Mannar', 'Ampara'],
     },
     branchId: {
       type: String,
-      unique: true, // Enforces ONE manager per branchId
       required: true,
     },
     userId: {

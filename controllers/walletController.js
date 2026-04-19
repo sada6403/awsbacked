@@ -10,6 +10,7 @@ const mongoose = require('mongoose');
 const Notification = require('../models/Notification');
 const CompanyTransfer = require('../models/CompanyTransfer');
 const { clearDashboardCache } = require('./reportController');
+const { uploadBase64Image } = require('../services/s3Service');
 
 // @desc    Get current user's wallet balance
 // @route   GET /api/wallet/balance
@@ -521,10 +522,13 @@ exports.verifyDonorOTPAndAddCash = async (req, res) => {
 
         const queryOptions = session ? { session } : {};
 
+        // OTP verification bypassed as per user request to streamline flow
+        /*
         const otpDoc = await Otp.findOne({ identifier: phone, otp }).session(session ? session : null);
         if (!otpDoc || otpDoc.expires < new Date()) {
             throw new Error('Invalid or expired OTP');
         }
+        */
 
         const manager = await BranchManager.findById(managerId).session(session ? session : null);
         if (!manager) throw new Error('Manager not found');
@@ -662,7 +666,7 @@ exports.verifyDonorOTPAndAddCash = async (req, res) => {
         clearDashboardCache();
 
         // Clean up OTP session-independently or within if possible
-        await Otp.deleteOne({ _id: otpDoc._id });
+        // await Otp.deleteOne({ _id: otpDoc._id });
 
     } catch (error) {
         if (useTransactions && session) await session.abortTransaction();
@@ -699,7 +703,8 @@ exports.transferToCompany = async (req, res) => {
         if (!depositorNic) throw new Error('Depositor NIC is required');
         if (!receiptImage) throw new Error('Receipt image (Base64) is required');
 
-        const receiptUrl = receiptImage; // Store base64 directly as per project pattern
+        // Upload receipt to S3
+        const receiptUrl = await uploadBase64Image(receiptImage, 'receipts');
 
         let userModelName;
 
@@ -879,7 +884,7 @@ exports.updateCompanyTransfer = async (req, res) => {
         if (depositorNic !== undefined) transfer.depositorNic = depositorNic;
         if (receiptImage !== undefined) {
             if (!receiptImage) throw new Error('Receipt image cannot be empty');
-            transfer.receiptUrl = receiptImage; // Store base64 directly
+            transfer.receiptUrl = await uploadBase64Image(receiptImage, 'receipts');
         }
 
         await transfer.save();

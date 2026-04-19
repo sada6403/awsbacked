@@ -14,7 +14,7 @@ router.get('/dashboard-stats', protect, getDashboardStats);
 
 // Backward-compatible single dashboard endpoint that routes by role
 router.get('/dashboard', protect, (req, res, next) => {
-	const role = req.user?.role;
+	const role = (req.user?.role || '').toLowerCase().replace(/\s/g, '_');
 	if (role === 'manager' || role === 'branch_manager') {
 		return getManagerDashboard(req, res, next);
 	}

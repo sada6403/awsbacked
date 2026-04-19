@@ -15,26 +15,15 @@ const Otp = require('../models/Otp');
 
 // Generate Bill Number
 const generateBillNumber = async (type) => {
-    const today = new Date();
-    const dateStr = today.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
-    const prefix = `NF-${type[0]}-${dateStr}`;
+    const now = new Date();
+    const timestamp = now.getFullYear().toString() +
+        (now.getMonth() + 1).toString().padStart(2, '0') +
+        now.getDate().toString().padStart(2, '0') +
+        now.getHours().toString().padStart(2, '0') +
+        now.getMinutes().toString().padStart(2, '0') +
+        now.getSeconds().toString().padStart(2, '0');
 
-    // Find the latest transaction with this prefix to get the highest sequence
-    const lastTransaction = await Transaction.findOne({
-        billNumber: new RegExp(`^${prefix}-\\d+$`)
-    }).sort({ billNumber: -1 }).lean();
-
-    let nextSequence = 1;
-    if (lastTransaction && lastTransaction.billNumber) {
-        const parts = lastTransaction.billNumber.split('-');
-        const lastSeq = parseInt(parts[parts.length - 1]);
-        if (!isNaN(lastSeq)) {
-            nextSequence = lastSeq + 1;
-        }
-    }
-
-    const sequenceStr = nextSequence.toString().padStart(5, '0');
-    return `${prefix}-${sequenceStr}`;
+    return `NF-${type[0]}-${timestamp}`;
 };
 
 // @desc    Create new transaction
@@ -256,6 +245,28 @@ const createTransaction = async (req, res) => {
                 }
 
                 saved = await transaction.save();
+
+                // --- Atomically Update Member Totals ---
+                const amountToIncr = Number(totalAmount);
+                const updateQuery = {};
+                if (normalizedType === 'buy') {
+                    updateQuery.totalBuyAmount = amountToIncr;
+                } else {
+                    updateQuery.totalSellAmount = amountToIncr;
+                }
+
+                if (memberModel === 'Member') {
+                    await Member.findByIdAndUpdate(member._id, { $inc: updateQuery });
+                } else if (memberModel === 'ExtraMember') {
+                    await ExtraMember.findByIdAndUpdate(member._id, { $inc: updateQuery });
+                } else if (memberModel === 'ManagersMember') {
+                    await ManagersMember.findByIdAndUpdate(member._id, { $inc: updateQuery });
+                }
+
+                // --- Atomically Update Field Visitor Totals ---
+                if (fv) {
+                    await FieldVisitor.findByIdAndUpdate(fv._id, { $inc: updateQuery });
+                }
 
                 // Determine if this is a first transaction for a lead or manager-member
                 const isFirstTransactionLead = (memberModel === 'ManagersMember' && !member.isFirstTransactionDone);
@@ -481,12 +492,21 @@ const getTransactions = async (req, res) => {
             query.branchId = branchId;
         }
 
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const skip = (page - 1) * limit;
+
         console.log('[getTransactions] Query:', JSON.stringify(query));
-        const transactions = await Transaction.find(query)
-            .sort({ date: -1 })
-            .limit(100)
-            .populate('fieldVisitorId', 'name userId branchId')
-            .lean();
+        
+        const [transactions, totalCount] = await Promise.all([
+            Transaction.find(query)
+                .sort({ date: -1 })
+                .skip(skip)
+                .limit(limit)
+                .populate('fieldVisitorId', 'name userId branchId')
+                .lean(),
+            Transaction.countDocuments(query)
+        ]);
 
         // Manual Polymorphic Population for memberId
         const memberIdsByModel = {
@@ -513,11 +533,23 @@ const getTransactions = async (req, res) => {
         extras.forEach(m => memberMap.set(m._id.toString(), m));
         managerMembers.forEach(m => memberMap.set(m._id.toString(), { ...m, name: m.name || m.fullName }));
 
-        transactions.forEach(tx => {
-            tx.memberId = memberMap.get(tx.memberId.toString()) || { _id: tx.memberId, name: 'Unknown' };
+         transactions.forEach(tx => {
+            const txMemberId = tx.memberId?.toString();
+            if (txMemberId && memberMap.has(txMemberId)) {
+                tx.memberId = memberMap.get(txMemberId);
+            } else {
+                tx.memberId = { _id: tx.memberId, name: 'Unknown' };
+            }
         });
 
-        res.json({ success: true, count: transactions.length, data: transactions });
+        res.json({ 
+            success: true, 
+            count: transactions.length, 
+            total: totalCount,
+            page,
+            hasMore: totalCount > (skip + transactions.length),
+            data: transactions 
+        });
     } catch (error) {
         console.error('[getTransactions] Error:', error.message);
         res.status(500).json({ success: false, message: 'Failed to fetch transactions', error: error.message });

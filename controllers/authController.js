@@ -16,11 +16,11 @@ const loginUser = async (req, res, next) => {
             res.status(400);
             throw new Error('Please provide all credentials');
         }
-
         let user;
 
         if (role === 'manager') {
-            // Manager login by email or userId
+
+            // 1. Find user in BranchManager collection
             user = await BranchManager.findOne({
                 $or: [{ email: username }, { userId: username }]
             });
@@ -40,11 +40,11 @@ const loginUser = async (req, res, next) => {
                 name: user.fullName || user.name,
                 email: user.email,
                 code: user.userId || user.code,
-                role: role,
+                role: user.role || role,
                 branchId,
                 branchName: user.branchName || '', // Return branch name
                 profileImage: user.profileImage, // Return profile image
-                token: generateToken(user._id, role === 'field' ? 'field_visitor' : 'manager', branchId),
+                token: generateToken(user._id, user.role || (role === 'field' ? 'field_visitor' : 'manager'), branchId),
             };
 
             // Add phone field for all users
@@ -247,4 +247,49 @@ const updateFcmToken = async (req, res, next) => {
     }
 };
 
-module.exports = { loginUser, registerManager, updateManager, getManagerById, updateFcmToken };
+// @desc    Change Password
+// @route   POST /api/auth/change-password
+// @access  Private
+const changePassword = async (req, res, next) => {
+    try {
+        const { oldPassword, newPassword } = req.body;
+        const userId = req.user._id;
+        const role = req.user.role;
+
+        if (!oldPassword || !newPassword) {
+            res.status(400);
+            throw new Error('Please provide old and new password');
+        }
+
+        let user;
+        if (role === 'manager' || role === 'branch_manager') {
+            user = await BranchManager.findById(userId);
+        } else {
+            user = await FieldVisitor.findById(userId);
+        }
+
+        if (!user) {
+            res.status(404);
+            throw new Error('User not found');
+        }
+
+        // Check if old password matches
+        if (!(await user.matchPassword(oldPassword))) {
+            res.status(401);
+            throw new Error('Incorrect old password');
+        }
+
+        // Set new password (the model pre-save hook will hash it)
+        user.password = newPassword;
+        await user.save();
+
+        res.json({
+            success: true,
+            message: 'Password changed successfully'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+module.exports = { loginUser, registerManager, updateManager, getManagerById, updateFcmToken, changePassword };

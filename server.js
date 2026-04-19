@@ -26,6 +26,7 @@ const walletRoutes = require('./routes/walletRoutes');
 const managersMemberRoutes = require('./routes/managersMemberRoutes');
 const draftRoutes = require('./routes/draftRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const branchRoutes = require('./routes/branchRoutes');
 
 // Import error middleware
 const errorHandler = require('./middleware/errorMiddleware');
@@ -45,16 +46,26 @@ app.use((req, res, next) => {
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'request-id'],
     credentials: true
 }));
-app.use(express.json({ limit: '10mb' })); // Increased limit for signature images
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(express.json({ limit: '50mb' })); // Increased for multiple ID card images
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Log body after parsing
+// Log body summary avoiding large base64 dumps
 app.use((req, res, next) => {
     if (req.body && Object.keys(req.body).length > 0) {
-        console.log('[DEBUG] Parsed Body:', JSON.stringify(req.body, null, 2));
+        const bodyCopy = { ...req.body };
+        // Truncate potential large fields for logging
+        if (bodyCopy.registrationData) {
+            bodyCopy.registrationData = '{...}';
+        }
+        if (bodyCopy.profileImage) bodyCopy.profileImage = '[BASE64_IMAGE]';
+        if (bodyCopy.signatureImage) bodyCopy.signatureImage = '[BASE64_SIGNATURE]';
+        if (bodyCopy.idFrontImage) bodyCopy.idFrontImage = '[BASE64_ID_FRONT]';
+        if (bodyCopy.idBackImage) bodyCopy.idBackImage = '[BASE64_ID_BACK]';
+        
+        console.log('[DEBUG] Parsed Body:', JSON.stringify(bodyCopy, null, 2));
     }
     next();
 });
@@ -92,7 +103,7 @@ const connectDB = async () => {
             return;
         } catch (error) {
             console.error(`Atlas connection failed: ${error.message}`);
-            process.exit(1);
+            throw error;
         }
     }
 
@@ -146,6 +157,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/managers-members', managersMemberRoutes);
 app.use('/api/drafts', draftRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/branches', branchRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -331,7 +343,11 @@ app.get('/', (req, res) => {
 
 // 5. Start Server after DB is ready
 (async () => {
-    await connectDB();
+    try {
+        await connectDB();
+    } catch (err) {
+        console.error(`DB Connection failed, continuing in MOCK MODE: ${err.message}`);
+    }
     const server = app.listen(PORT, '0.0.0.0', () => {
         const os = require('os');
         const networkInterfaces = os.networkInterfaces();

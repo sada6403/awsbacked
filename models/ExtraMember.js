@@ -20,6 +20,8 @@ const ExtraMemberSchema = new mongoose.Schema({
     idFrontImage: { type: String },
     idBackImage: { type: String },
     walletBalance: { type: Number, default: 0 },
+    totalBuyAmount: { type: Number, default: 0 },
+    totalSellAmount: { type: Number, default: 0 },
     notes: { type: String }
 }, { timestamps: true });
 

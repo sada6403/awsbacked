@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 /**
  * Detects if a string is valid base64 image data.
@@ -30,12 +31,32 @@ function base64ToBuffer(str) {
 }
 
 /**
+ * Universal helper to get a Buffer from either Base64 or a Remote URL (S3).
+ */
+async function getImageBuffer(source) {
+    if (!source) return null;
+    if (source.startsWith('http')) {
+        try {
+            const response = await axios.get(source, { responseType: 'arraybuffer' });
+            return Buffer.from(response.data, 'binary');
+        } catch (e) {
+            console.error(`Remote image fetch error (${source}):`, e.message);
+            return null;
+        }
+    }
+    if (isBase64Image(source)) {
+        return base64ToBuffer(source);
+    }
+    return null;
+}
+
+/**
  * Generates a Member Registration PDF.
  * @param {Object} member - The member document from the database.
  * @returns {Promise<string>} - The relative URL path to the generated PDF.
  */
 const generateMemberPDF = (member) => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         try {
             const doc = new PDFDocument({ margin: 40, size: 'A4' });
             const membersDir = path.join(__dirname, '..', 'public', 'members');
@@ -75,9 +96,9 @@ const generateMemberPDF = (member) => {
                 .text('Phone: 024 433 5099 | Email: nfplantation.official.it@gmail.com', 105, 75);
 
             // Profile Photo (top right)
-            if (member.profileImage && isBase64Image(member.profileImage)) {
+            if (member.profileImage) {
                 try {
-                    const profileBuf = base64ToBuffer(member.profileImage);
+                    const profileBuf = await getImageBuffer(member.profileImage);
                     if (profileBuf) {
                         doc.image(profileBuf, 480, 35, { width: 70, height: 80, fit: [70, 80] });
                     }
@@ -212,9 +233,9 @@ const generateMemberPDF = (member) => {
             y += 10;
             sectionHeader('Signature');
 
-            if (member.signatureImage && isBase64Image(member.signatureImage)) {
+            if (member.signatureImage) {
                 try {
-                    const sigBuf = base64ToBuffer(member.signatureImage);
+                    const sigBuf = await getImageBuffer(member.signatureImage);
                     if (sigBuf) {
                         doc.image(sigBuf, 50, y, { width: 120, height: 50, fit: [120, 50] });
                         y += 55;
@@ -233,8 +254,8 @@ const generateMemberPDF = (member) => {
             }
 
             // ====== ID CARD IMAGES ======
-            const hasIdFront = member.idFrontImage && isBase64Image(member.idFrontImage);
-            const hasIdBack = member.idBackImage && isBase64Image(member.idBackImage);
+            const hasIdFront = !!member.idFrontImage;
+            const hasIdBack = !!member.idBackImage;
 
             if (hasIdFront || hasIdBack) {
                 // Start a new page for ID cards if not enough space
@@ -248,7 +269,7 @@ const generateMemberPDF = (member) => {
 
                 if (hasIdFront) {
                     try {
-                        const frontBuf = base64ToBuffer(member.idFrontImage);
+                        const frontBuf = await getImageBuffer(member.idFrontImage);
                         if (frontBuf) {
                             doc.fillColor(grey).fontSize(9).font('Helvetica-Bold').text('ID Card - Front:', 50, y);
                             y += 15;
@@ -266,7 +287,7 @@ const generateMemberPDF = (member) => {
                         y = 50;
                     }
                     try {
-                        const backBuf = base64ToBuffer(member.idBackImage);
+                        const backBuf = await getImageBuffer(member.idBackImage);
                         if (backBuf) {
                             doc.fillColor(grey).fontSize(9).font('Helvetica-Bold').text('ID Card - Back:', 50, y);
                             y += 15;

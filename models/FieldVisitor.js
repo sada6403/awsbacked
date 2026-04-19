@@ -42,6 +42,10 @@ const FieldVisitorSchema = new mongoose.Schema({
     area: { type: String, required: true, default: 'default-area' },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
     walletBalance: { type: Number, default: 0 },
+    memberCount: { type: Number, default: 0 },
+    leadCount: { type: Number, default: 0 },
+    totalBuyAmount: { type: Number, default: 0 },
+    totalSellAmount: { type: Number, default: 0 },
     profileImage: { type: String }, // Base64 image string
     fcmToken: { type: String, index: true },
     createdAt: { type: Date, default: Date.now }

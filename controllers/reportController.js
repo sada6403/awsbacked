@@ -41,82 +41,60 @@ const getManagerDashboard = async (req, res) => {
 
         const cacheKey = `manager_dash_${req.user._id}_${branchId}`;
         const cachedData = cacheService.get(cacheKey);
-        if (cachedData) {
+        // Temporarily bypass cache to force a fresh pull for the fix
+        if (cachedData && !req.query.refresh) {
             console.log(`[getManagerDashboard] Serving from Cache: ${cacheKey}`);
             return res.json(cachedData);
         }
 
         // Efficiently fetch all branch data in parallel
         const [
-            fieldVisitors,
-            contributions,
-            [extraMemberCounts, centralMemberCounts],
-            leadCounts,
-            managerMemberCounts,
-            notifications,
-            unreadNotificationsCount,
+            transactionFacets,
+            notificationData,
             manager,
-            monthlyData
+            managersMemberCount
         ] = await Promise.all([
-            FieldVisitor.find(branchMatch).select('name userId phone branchId area status').lean(),
+            // 1. Transaction Facets (Consolidated 2 aggregations into 1)
             Transaction.aggregate([
-                { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
-                {
-                    $group: {
-                        _id: { fieldVisitorId: '$fieldVisitorId', type: '$type' },
-                        totalAmount: { $sum: '$totalAmount' },
-                        transactionCount: { $sum: 1 }
-                    }
-                }
-            ]),
-            // Members count (combined)
-            FieldVisitor.find(branchMatch).select('_id').then(visitors => {
-                const visitorIds = visitors.map(v => v._id);
-                visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
-                return Promise.all([
-                    ExtraMember.aggregate([
-                        { $match: { collectedBy: { $in: visitorIds }, memberCode: { $exists: true, $ne: null, $ne: '' } } },
-                        { $group: { _id: '$collectedBy', memberCount: { $sum: 1 } } }
-                    ]),
-                    Member.aggregate([
-                        { $match: { fieldVisitorId: { $in: visitorIds } } },
-                        { $group: { _id: '$fieldVisitorId', memberCount: { $sum: 1 } } }
-                    ])
-                ]);
-            }),
-            // Leads
-            FieldVisitor.find(branchMatch).select('_id').then(visitors => {
-                const visitorIds = visitors.map(v => v._id);
-                visitorIds.push(new mongoose.Types.ObjectId(req.user._id));
-                return ExtraMember.aggregate([
-                    {
-                        $match: {
-                            collectedBy: { $in: visitorIds },
-                            $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }]
+                { $facet: {
+                    contributions: [
+                        { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
+                        {
+                            $group: {
+                                _id: { fieldVisitorId: '$fieldVisitorId', type: '$type' },
+                                totalAmount: { $sum: '$totalAmount' },
+                                transactionCount: { $sum: 1 }
+                            }
                         }
-                    },
-                    { $group: { _id: '$collectedBy', leadCount: { $sum: 1 } } }
-                ]);
-            }),
-            // Manager's own
-            ManagersMember.aggregate([
-                { $match: { addedBy: new mongoose.Types.ObjectId(req.user._id) } },
-                { $group: { _id: '$addedBy', count: { $sum: 1 } } }
+                    ],
+                    monthlyData: [
+                        { $match: { ...branchMatch, date: { $gte: startOfYear, $lte: endOfYear } } },
+                        {
+                            $group: {
+                                _id: { month: { $month: '$date' }, type: '$type' },
+                                totalAmount: { $sum: '$totalAmount' }
+                            }
+                        },
+                        { $sort: { '_id.month': 1 } }
+                    ]
+                }}
+            ]).then(res => res[0]),
+
+            // 2. Notification Data
+            Promise.all([
+                Notification.find({ userId: req.user._id }).sort({ date: -1 }).limit(10).lean(),
+                Notification.countDocuments({ userId: req.user._id, isRead: false })
             ]),
-            Notification.find({ userId: req.user._id }).sort({ date: -1 }).limit(10).lean(),
-            Notification.countDocuments({ userId: req.user._id, isRead: false }),
+
+            // 3. Manager/Branch Info
             BranchManager.findById(req.user._id).lean(),
-            Transaction.aggregate([
-                { $match: { ...branchMatch, date: { $gte: startOfYear, $lte: endOfYear } } },
-                {
-                    $group: {
-                        _id: { month: { $month: '$date' }, type: '$type' },
-                        totalAmount: { $sum: '$totalAmount' }
-                    }
-                },
-                { $sort: { '_id.month': 1 } }
-            ])
+
+            // 4. Counts
+            ManagersMember.countDocuments({ addedBy: req.user._id })
         ]);
+
+        const { contributions, monthlyData } = transactionFacets;
+        const [notifications, unreadNotificationsCount] = notificationData;
 
         const contributionMap = new Map();
         let branchBuyAmount = 0;
@@ -135,17 +113,46 @@ const getManagerDashboard = async (req, res) => {
             else if (c._id.type === 'sell') branchSellAmount += c.totalAmount;
         });
 
-        const memberMap = new Map((centralMemberCounts || []).map(m => [m._id?.toString(), m.memberCount]));
-        const extraMap = new Map((extraMemberCounts || []).map(m => [m._id?.toString(), m.memberCount]));
-        const leadMap = new Map((leadCounts || []).map(l => [l._id?.toString(), l.leadCount]));
-        const managerMap = new Map((managerMemberCounts || []).map(m => [m._id?.toString(), m.count]));
+        // Get field visitors
+        const fieldVisitors = await FieldVisitor.find(branchMatch).select('name userId phone branchId area status memberCount leadCount totalBuyAmount totalSellAmount walletBalance').lean();
 
-        const fieldVisitorStats = (fieldVisitors || []).map(fv => {
+        // Get live counts per FV from real collections
+        const fvIds = fieldVisitors.map(fv => fv._id);
+        const fvIdsString = fieldVisitors.map(fv => fv._id.toString());
+        const fvUserIds = fieldVisitors.map(fv => fv.userId).filter(Boolean);
+        const allFvIds = [...fvIds, ...fvIdsString, ...fvUserIds];
+
+        const [memberFacets, leadFacets] = await Promise.all([
+            Member.aggregate([
+                { $match: { fieldVisitorId: { $in: allFvIds } } },
+                { $group: { _id: { $toLower: { $toString: '$fieldVisitorId' } }, count: { $sum: 1 } } }
+            ]),
+            ExtraMember.aggregate([
+                { $facet: {
+                    converted: [
+                        { $match: { collectedBy: { $in: allFvIds }, memberCode: { $exists: true, $ne: null, $ne: '' } } },
+                        { $group: { _id: { $toLower: { $toString: '$collectedBy' } }, count: { $sum: 1 } } }
+                    ],
+                    pure: [
+                        { $match: { collectedBy: { $in: allFvIds }, $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }] } },
+                        { $group: { _id: { $toLower: { $toString: '$collectedBy' } }, count: { $sum: 1 } } }
+                    ]
+                }}
+            ]).then(res => res[0])
+        ]);
+
+        const memberCountAgg = memberFacets;
+        const convertedLeadCountAgg = leadFacets.converted;
+        const leadCountAgg = leadFacets.pure;
+        const memberCountMap = new Map();
+        memberCountAgg.forEach(s => memberCountMap.set(s._id?.toString(), (memberCountMap.get(s._id?.toString()) || 0) + s.count));
+        convertedLeadCountAgg.forEach(s => memberCountMap.set(s._id?.toString(), (memberCountMap.get(s._id?.toString()) || 0) + s.count));
+        const leadCountMap = new Map(leadCountAgg.map(s => [s._id?.toString(), s.count]));
+
+        const fieldVisitorStats = fieldVisitors.map(fv => {
             const key = fv._id.toString();
             const contrib = contributionMap.get(key) || { totalAmount: 0, transactionCount: 0 };
-            let totalMembers = (memberMap.get(key) || 0) + (extraMap.get(key) || 0);
-            if (key === req.user._id.toString()) totalMembers += (managerMap.get(key) || 0);
-
+            
             return {
                 _id: fv._id,
                 name: fv.name || fv.fullName,
@@ -154,10 +161,11 @@ const getManagerDashboard = async (req, res) => {
                 email: fv.email,
                 address: fv.postalAddress || fv.permanentAddress || 'N/A',
                 totalAmount: contrib.totalAmount,
-                amount: contrib.totalAmount,
+                amount: contrib.totalAmount, // Dashboard uses both
                 transactionCount: contrib.transactionCount,
-                memberCount: totalMembers,
-                leadCount: leadMap.get(key) || 0
+                memberCount: memberCountMap.get(key) || 0,
+                leadCount: leadCountMap.get(key) || 0,
+                walletBalance: fv.walletBalance || 0
             };
         }).sort((a, b) => b.totalAmount - a.totalAmount);
 
@@ -165,7 +173,6 @@ const getManagerDashboard = async (req, res) => {
         const totalBranchAmount = fieldVisitorStats.reduce((sum, fv) => sum + fv.totalAmount, 0);
         const totalTransactions = fieldVisitorStats.reduce((sum, fv) => sum + fv.transactionCount, 0);
         const totalMembers = fieldVisitorStats.reduce((sum, fv) => sum + fv.memberCount, 0);
-        const managersMemberCount = managerMap.get(req.user._id.toString()) || 0;
 
         // Recent items (merged)
         const [recentMgrMembers, recentExtMembers] = await Promise.all([
@@ -479,7 +486,10 @@ const getDashboardStats = async (req, res) => {
 
         // Fetch Field Visitor info for wallet balance (needed for Rs.0.00 fix)
         let walletBalance = 0;
-        if (!isManager) {
+        if (isManager) {
+            const manager = await BranchManager.findById(userId).lean();
+            walletBalance = manager?.walletBalance || 0;
+        } else {
             const visitor = await FieldVisitor.findById(userId).lean();
             walletBalance = visitor?.walletBalance || 0;
         }
@@ -521,7 +531,8 @@ const getDashboardStats = async (req, res) => {
 
         const cacheKey = `stats_${userId}_${branchId}_${currentYear}_${currentMonth}`;
         const cachedData = cacheService.get(cacheKey);
-        if (cachedData) {
+        // Temporarily bypass cache to force a fresh pull for the fix
+        if (cachedData && !req.query.refresh) {
             console.log(`[getDashboardStats] Serving from Cache: ${cacheKey}`);
             return res.json(cachedData);
         }
@@ -530,86 +541,104 @@ const getDashboardStats = async (req, res) => {
 
         // Efficiently fetch all required counts and data in parallel
         const [
-            monthlyBreakdown,
-            notifications,
-            unreadNotificationsCount,
-            buyAmountBreakdown,
-            sellAmountBreakdown,
-            monthlyLeads,
-            totalLeads,
-            annualLeads,
+            transactionFacets,
+            leadFacets,
             managersMemberCount,
-            totalTransactionsCount,
-            transactions,
-            recentExtraMembers,
-            totalMembersCount
+            totalMembersCount,
+            notificationsData
         ] = await Promise.all([
-            // 1. Monthly Transaction Breakdown
+            // 1. Transaction Facets (Consolidated 5 queries into 1)
             Transaction.aggregate([
-                { $match: txFilter },
-                { $group: { _id: '$type', totalAmount: { $sum: '$totalAmount' } } }
-            ]),
-            // 2. Recent Notifications
-            Notification.find({ userId: req.user._id }).sort({ date: -1 }).limit(10).lean(),
-            // 3. Unread Notifications Count
-            Notification.countDocuments({ userId: req.user._id, isRead: false }),
-            // 4. Buy Amount Pie Breakdown
-            Transaction.aggregate([
-                { $match: { ...pieMatch, type: 'buy', ...dateMatch } },
-                { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
-            ]),
-            // 5. Sell Amount Pie Breakdown
-            Transaction.aggregate([
-                { $match: { ...pieMatch, type: 'sell', ...dateMatch } },
-                { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
-            ]),
-            // 6. Monthly Leads Count
-            ExtraMember.countDocuments({
-                collectedBy: userId,
-                collectedAt: { $gte: startOfMonth, $lte: endOfMonth }
-            }),
-            // 7. Total Lifetime Leads Count
-            ExtraMember.countDocuments({ collectedBy: userId }),
-            // 8. Annual Leads Count
-            ExtraMember.countDocuments({
-                collectedBy: userId,
-                collectedAt: {
-                    $gte: new Date(new Date().getFullYear(), 0, 1),
-                    $lte: new Date(new Date().getFullYear(), 11, 31, 23, 59, 59)
-                }
-            }),
-            // 9. Manager's own member count
+                { $facet: {
+                    monthlyBreakdown: [
+                        { $match: txFilter },
+                        { $group: { _id: '$type', totalAmount: { $sum: '$totalAmount' } } }
+                    ],
+                    buyAmountBreakdown: [
+                        { $match: { ...pieMatch, type: 'buy', ...dateMatch } },
+                        { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
+                    ],
+                    sellAmountBreakdown: [
+                        { $match: { ...pieMatch, type: 'sell', ...dateMatch } },
+                        { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' } } }
+                    ],
+                    totalCount: [
+                        { $match: isManager ? branchMatch : { fieldVisitorId: userId } },
+                        { $count: 'count' }
+                    ],
+                    recent: [
+                        { $match: isManager ? branchMatch : { fieldVisitorId: userId } },
+                        { $sort: { date: -1 } },
+                        { $limit: 10 }
+                    ]
+                }}
+            ]).then(res => res[0]),
+
+            // 2. ExtraMember Facets (Consolidated 5 queries into 1)
+            ExtraMember.aggregate([
+                { $facet: {
+                    monthlyLeads: [
+                        { $match: { collectedBy: userId, collectedAt: { $gte: startOfMonth, $lte: endOfMonth } } },
+                        { $count: 'count' }
+                    ],
+                    totalLeads: [
+                        { $match: { collectedBy: userId } },
+                        { $count: 'count' }
+                    ],
+                    annualLeads: [
+                        { $match: { 
+                            collectedBy: userId, 
+                            collectedAt: { 
+                                $gte: new Date(new Date().getFullYear(), 0, 1),
+                                $lte: new Date(new Date().getFullYear(), 11, 31, 23, 59, 59)
+                            } 
+                        }},
+                        { $count: 'count' }
+                    ],
+                    recent: [
+                        { $match: { collectedBy: userId, memberCode: { $ne: null, $ne: '' } } },
+                        { $project: { profileImage: 0, signatureImage: 0, idFrontImage: 0, idBackImage: 0, biometricData: 0 } },
+                        { $sort: { collectedAt: -1 } },
+                        { $limit: 10 }
+                    ]
+                }}
+            ]).then(res => res[0]),
+
+            // 3. Manager's own combined member count
             Promise.all([
                 ManagersMember.countDocuments({ addedBy: userId }),
                 ExtraMember.countDocuments({ collectedBy: userId, memberCode: { $ne: null, $ne: '' } }),
                 Member.countDocuments({ fieldVisitorId: userId })
             ]).then(([a, b, c]) => a + b + c),
-            // 10. Total Transactions Count
+
+            // 4. Total Members Count (Matches user expectations)
             isManager
-                ? Transaction.countDocuments({ branchId })
-                : Transaction.countDocuments({ fieldVisitorId: userId }),
-            // 11. Recent Transactions
-            Transaction.find(isManager ? branchMatch : { fieldVisitorId: userId }).sort({ date: -1 }).limit(10).lean(),
-            // 12. Recent Leads (Extra Members)
-            ExtraMember.find({
-                collectedBy: userId,
-                memberCode: { $ne: null, $ne: '' }
-            })
-                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
-                .sort({ collectedAt: -1 })
-                .limit(10)
-                .lean(),
-            // 13. Total Members Count (Matches user expectations: 28 for FV-KA-005)
-            (isManager)
                 ? Promise.all([
                     Member.countDocuments(branchMatch),
-                    ExtraMember.countDocuments({
-                        ...branchMatch,
-                        memberCode: { $ne: null, $ne: '' }
-                    })
+                    ExtraMember.countDocuments({ ...branchMatch, memberCode: { $ne: null, $ne: '' } })
                 ]).then(([a, b]) => a + b)
-                : Member.countDocuments({ fieldVisitorId: userId })
+                : Member.countDocuments({ fieldVisitorId: userId }),
+
+            // 5. Notifications
+            Promise.all([
+                Notification.find({ userId: req.user._id }).sort({ date: -1 }).limit(10).lean(),
+                Notification.countDocuments({ userId: req.user._id, isRead: false })
+            ])
         ]);
+
+        const monthlyBreakdown = transactionFacets.monthlyBreakdown;
+        const buyAmountBreakdown = transactionFacets.buyAmountBreakdown;
+        const sellAmountBreakdown = transactionFacets.sellAmountBreakdown;
+        const totalTransactionsCount = transactionFacets.totalCount[0]?.count || 0;
+        const transactions = transactionFacets.recent;
+
+        const monthlyLeads = leadFacets.monthlyLeads[0]?.count || 0;
+        const totalLeads = leadFacets.totalLeads[0]?.count || 0;
+        const annualLeads = leadFacets.annualLeads[0]?.count || 0;
+        const recentExtraMembers = leadFacets.recent;
+
+        const [notifications, unreadNotificationsCount] = notificationsData;
+
 
         let buyAmount = 0;
         let sellAmount = 0;
@@ -636,46 +665,45 @@ const getDashboardStats = async (req, res) => {
         let fieldVisitors = [];
         if (isManager) {
             const fvs = await FieldVisitor.find(branchMatch).lean();
-            const [fvAggregation, fvMemberCounts, fvExtraCounts] = await Promise.all([
+
+            // Get all FV IDs so we can aggregate counts in parallel
+            const fvIds = fvs.map(fv => fv._id);
+            const fvIdsString = fvs.map(fv => fv._id.toString());
+            const fvUserIds = fvs.map(fv => fv.userId).filter(Boolean);
+            const allFvIds = [...fvIds, ...fvIdsString, ...fvUserIds];
+
+            const [fvAggregation, memberCountAgg, convertedLeadCountAgg, leadCountAgg] = await Promise.all([
+                // Transaction totals this month per FV
                 Transaction.aggregate([
                     { $match: { ...branchMatch, date: { $gte: startOfMonth, $lte: endOfMonth } } },
-                    { $group: { _id: '$fieldVisitorId', totalAmount: { $sum: '$totalAmount' }, transactionCount: { $sum: 1 } } }
+                    { $group: { _id: { $toLower: { $toString: '$fieldVisitorId' } }, totalAmount: { $sum: '$totalAmount' }, transactionCount: { $sum: 1 } } }
                 ]),
-                Promise.all([
-                    Member.aggregate([
-                        { $match: { ...branchMatch } },
-                        { $group: { _id: '$fieldVisitorId', count: { $sum: 1 } } }
-                    ]),
-                    ExtraMember.aggregate([
-                        { $match: { ...branchMatch, memberCode: { $exists: true, $ne: null, $ne: '' } } },
-                        { $group: { _id: '$collectedBy', count: { $sum: 1 } } }
-                    ])
-                ]).then(([memberCounts, extraCounts]) => {
-                    const mMap = new Map(memberCounts.map(c => [c._id?.toString(), c.count]));
-                    const eMap = new Map(extraCounts.map(c => [c._id?.toString(), c.count]));
-                    const uniqueIds = new Set([...mMap.keys(), ...eMap.keys()]);
-                    return Array.from(uniqueIds).map(id => ({
-                        _id: id,
-                        count: (mMap.get(id) || 0) + (eMap.get(id) || 0)
-                    }));
-                }),
+                // Live member count: Member collection + converted ExtraMember (has memberCode)
+                Member.aggregate([
+                    { $match: { fieldVisitorId: { $in: allFvIds } } },
+                    { $group: { _id: { $toLower: { $toString: '$fieldVisitorId' } }, count: { $sum: 1 } } }
+                ]),
+                // Converted leads (ExtraMember WITH memberCode = registered members)
                 ExtraMember.aggregate([
-                    {
-                        $match: {
-                            ...branchMatch,
-                            $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }]
-                        }
-                    },
-                    { $group: { _id: '$collectedBy', count: { $sum: 1 } } }
+                    { $match: { collectedBy: { $in: allFvIds }, memberCode: { $exists: true, $ne: null, $ne: '' } } },
+                    { $group: { _id: { $toLower: { $toString: '$collectedBy' } }, count: { $sum: 1 } } }
+                ]),
+                // Pure leads (ExtraMember WITHOUT memberCode)
+                ExtraMember.aggregate([
+                    { $match: { collectedBy: { $in: allFvIds }, $or: [{ memberCode: { $exists: false } }, { memberCode: null }, { memberCode: '' }] } },
+                    { $group: { _id: { $toLower: { $toString: '$collectedBy' } }, count: { $sum: 1 } } }
                 ])
             ]);
 
             const statsMap = new Map(fvAggregation.map(s => [s._id?.toString(), s]));
-            const memberCountMap = new Map(fvMemberCounts.map(c => [c._id?.toString(), c.count]));
-            const leadCountMap = new Map(fvExtraCounts.map(c => [c._id?.toString(), c.count]));
+            const memberCountMap = new Map();
+            memberCountAgg.forEach(s => memberCountMap.set(s._id?.toString(), (memberCountMap.get(s._id?.toString()) || 0) + s.count));
+            convertedLeadCountAgg.forEach(s => memberCountMap.set(s._id?.toString(), (memberCountMap.get(s._id?.toString()) || 0) + s.count));
+            const leadCountMap = new Map(leadCountAgg.map(s => [s._id?.toString(), s.count]));
 
             fieldVisitors = fvs.map(fv => {
-                const s = statsMap.get(fv._id.toString()) || { totalAmount: 0, transactionCount: 0 };
+                const fvIdStr = fv._id.toString();
+                const s = statsMap.get(fvIdStr) || { totalAmount: 0, transactionCount: 0 };
                 return {
                     id: fv._id,
                     _id: fv._id,
@@ -688,8 +716,8 @@ const getDashboardStats = async (req, res) => {
                     amount: s.totalAmount,
                     totalAmount: s.totalAmount,
                     transactionCount: s.transactionCount,
-                    memberCount: memberCountMap.get(fv._id.toString()) || 0,
-                    leadCount: leadCountMap.get(fv._id.toString()) || 0
+                    memberCount: memberCountMap.get(fvIdStr) || 0,
+                    leadCount: leadCountMap.get(fvIdStr) || 0
                 };
             });
         }
@@ -715,19 +743,19 @@ const getDashboardStats = async (req, res) => {
                     others: sellOthers,
                     total: sellThisUser + sellOthers
                 },
-                totalMembers: totalMembersCount || 0,
-                extraMembersCount: totalLeads || 0,
-                recentExtraMembers: recentExtraMembers || [],
-                recentManagerMembers: isManager ? (recentExtraMembers || []) : [],
-                totalTransactions: totalTransactionsCount || 0,
-                transactions: transactions || [],
-                notifications: notifications || [],
-                unreadNotificationsCount: unreadNotificationsCount || 0,
+                totalMembers: (typeof totalMembersCount !== 'undefined') ? totalMembersCount : 0,
+                extraMembersCount: (typeof totalLeads !== 'undefined') ? totalLeads : 0,
+                recentExtraMembers: (typeof recentExtraMembers !== 'undefined') ? recentExtraMembers : [],
+                recentManagerMembers: isManager ? ((typeof recentExtraMembers !== 'undefined') ? recentExtraMembers : []) : [],
+                totalTransactions: (typeof totalTransactionsCount !== 'undefined') ? totalTransactionsCount : 0,
+                transactions: (typeof transactions !== 'undefined') ? transactions : [],
+                notifications: (typeof notifications !== 'undefined') ? notifications : [],
+                unreadNotificationsCount: (typeof unreadNotificationsCount !== 'undefined') ? unreadNotificationsCount : 0,
                 fieldVisitors: fieldVisitors || [],
-                monthlyLeads: monthlyLeads || 0,
-                totalLeads: totalLeads || 0,
-                managersMemberCount: managersMemberCount || 0,
-                annualLeads: annualLeads || 0
+                monthlyLeads: (typeof monthlyLeads !== 'undefined') ? monthlyLeads : 0,
+                totalLeads: (typeof totalLeads !== 'undefined') ? totalLeads : 0,
+                managersMemberCount: (typeof managersMemberCount !== 'undefined') ? managersMemberCount : 0,
+                annualLeads: (typeof annualLeads !== 'undefined') ? annualLeads : 0
             }
         };
 

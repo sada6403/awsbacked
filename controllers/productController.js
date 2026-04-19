@@ -6,6 +6,7 @@ const cacheService = require('../services/cacheService');
 // @route   GET /api/products
 // @access  Private (Protected)
 const getProducts = async (req, res) => {
+    console.log(`>>> [DEBUG] GET /api/products request received from user: ${req.user?._id} (Branch: ${req.user?.branchId})`);
     try {
         const branchId = req.user?.branchId || 'default-branch'; // from auth middleware
 
@@ -17,12 +18,16 @@ const getProducts = async (req, res) => {
         }
 
         // 1. Get all base products
+        const productsStart = Date.now();
         const products = await Product.find({}).lean();
+        console.log(`>>> [DEBUG] Product.find took ${Date.now() - productsStart}ms (Found: ${products.length})`);
 
         // 2. If branchId exists, get overrides
         let branchPrices = [];
         if (branchId) {
+            const branchStart = Date.now();
             branchPrices = await BranchProduct.find({ branchId }).lean();
+            console.log(`>>> [DEBUG] BranchProduct.find took ${Date.now() - branchStart}ms (Found: ${branchPrices.length})`);
         }
 
         // 3. Merge prices

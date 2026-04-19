@@ -19,7 +19,9 @@ const MemberSchema = new mongoose.Schema({
     signatureImage: { type: String }, // Base64 encoded signature image
     idFrontImage: { type: String }, // Base64 encoded ID card front
     idBackImage: { type: String }, // Base64 encoded ID card back
-    walletBalance: { type: Number, default: 0 }
+    walletBalance: { type: Number, default: 0 },
+    totalBuyAmount: { type: Number, default: 0 },
+    totalSellAmount: { type: Number, default: 0 }
 });
 
 module.exports = mongoose.model('Member', MemberSchema);
