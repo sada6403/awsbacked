@@ -40,8 +40,9 @@ const FieldVisitorSchema = new mongoose.Schema({
     managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'BranchManager', index: true },
     branchId: { type: String, required: true, default: 'default-branch', index: true },
     area: { type: String, required: true, default: 'default-area' },
-    status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+    status: { type: String, enum: ['active', 'inactive', 'blocked'], default: 'active' },
     walletBalance: { type: Number, default: 0 },
+    deactivatedAt: { type: Date, default: null },
     memberCount: { type: Number, default: 0 },
     leadCount: { type: Number, default: 0 },
     totalBuyAmount: { type: Number, default: 0 },
@@ -61,5 +62,8 @@ FieldVisitorSchema.pre('save', async function (next) {
 FieldVisitorSchema.methods.matchPassword = async function (enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
+
+FieldVisitorSchema.index({ branchId: 1, status: 1, createdAt: -1 });
+FieldVisitorSchema.index({ managerId: 1, branchId: 1 });
 
 module.exports = mongoose.model('FieldVisitor', FieldVisitorSchema, 'fieldvisitors');

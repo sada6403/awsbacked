@@ -151,7 +151,7 @@ Thank you!`;
     }
 
     async sendGeneralSMS(mobile, message) {
-        const cleanMobile = mobile.replace(/^\+/, '');
+        const cleanMobile = this._formatMobile(mobile);
         return this.provider.sendSMS(cleanMobile, message);
     }
 }

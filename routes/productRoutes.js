@@ -4,8 +4,8 @@ const { getProducts, createProduct, updateBranchPrice } = require('../controller
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 router.route('/')
-    .get(protect, getProducts) // Protected to get branchId context
-    .post(createProduct);
+    .get(protect, getProducts)
+    .post(protect, createProduct);
 
 router.post('/branch-price', protect, authorize('manager'), updateBranchPrice);
 

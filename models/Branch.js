@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { buildBranchId, normalizeBranchCode } = require('../utils/branchMaster');
 
 const BranchSchema = new mongoose.Schema(
   {
@@ -13,6 +14,12 @@ const BranchSchema = new mongoose.Schema(
       required: true,
       unique: true,
       uppercase: true,
+      trim: true,
+    },
+    branchId: {
+      type: String,
+      unique: true,
+      sparse: true,
       trim: true,
     },
     address: {
@@ -30,11 +37,26 @@ const BranchSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['active', 'inactive'],
+      enum: ['active', 'inactive', 'blocked'],
       default: 'active',
     },
   },
   { timestamps: true }
 );
+
+BranchSchema.pre('validate', function setBranchDefaults(next) {
+  if (this.branchCode) {
+    this.branchCode = normalizeBranchCode(this.branchCode);
+  }
+
+  if (!this.branchId && this.branchCode) {
+    this.branchId = buildBranchId(this.branchCode);
+  }
+
+  next();
+});
+
+BranchSchema.index({ branchCode: 1, status: 1 });
+BranchSchema.index({ branchName: 1, branchCode: 1 });
 
 module.exports = mongoose.model('Branch', BranchSchema);

@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const WalletRequestSchema = new mongoose.Schema({
     fvId: { type: mongoose.Schema.Types.ObjectId, ref: 'FieldVisitor', required: true, index: true },
     managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'BranchManager', index: true },
+    branchId: { type: String, index: true },
+    branchCode: { type: String, index: true },
     amount: { type: Number, required: true },
     requestedDate: { type: Date, required: true },
     status: {
@@ -13,6 +15,14 @@ const WalletRequestSchema = new mongoose.Schema({
     memberId: { type: mongoose.Schema.Types.ObjectId, ref: 'Member' }, // Optional: If request is specifically for a member
     fvNote: { type: String },
     managerNote: { type: String },
+    paymentMethod: { type: String },
+    slipUrl: { type: String },
+    adminRemarks: { type: String },
+    processedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser' },
+    processedAt: { type: Date },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser' },
+    rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser' },
+    rejectionReason: { type: String },
     isProcessed: { type: Boolean, default: false }
 }, { timestamps: true });
 WalletRequestSchema.index({ managerId: 1, createdAt: -1 });

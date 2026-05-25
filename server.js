@@ -4,9 +4,17 @@ require('dotenv').config();
 // Force the entire Node.js backend to run in Sri Lankan Time (+05:30)
 process.env.TZ = 'Asia/Colombo';
 
+process.on('uncaughtException', (err) => {
+    console.error('CRITICAL UNCAUGHT EXCEPTION:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('CRITICAL UNHANDLED REJECTION at:', promise, 'reason:', reason);
+});
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const compression = require('compression');
 const { initializeFCM } = require('./utils/pushNotification');
 
 // Initialize Firebase Admin
@@ -27,18 +35,23 @@ const managersMemberRoutes = require('./routes/managersMemberRoutes');
 const draftRoutes = require('./routes/draftRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const branchRoutes = require('./routes/branchRoutes');
+const adminRoutes = require('./routes/admin/index');
 
 // Import error middleware
 const errorHandler = require('./middleware/errorMiddleware');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DEBUG_REQUESTS = process.env.DEBUG_REQUESTS === 'true';
 
 // 1. Middleware
-// Request logging middleware - MOVED TO TOP to capture raw requests
+app.use(compression());
+
 app.use((req, res, next) => {
-    console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.path}`);
-    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    if (DEBUG_REQUESTS) {
+        console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.path}`);
+        console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    }
     next();
 });
 
@@ -54,7 +67,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Log body summary avoiding large base64 dumps
 app.use((req, res, next) => {
-    if (req.body && Object.keys(req.body).length > 0) {
+    if (DEBUG_REQUESTS && req.body && Object.keys(req.body).length > 0) {
         const bodyCopy = { ...req.body };
         // Truncate potential large fields for logging
         if (bodyCopy.registrationData) {
@@ -74,8 +87,9 @@ app.use((req, res, next) => {
 const path = require('path');
 app.use('/bills', express.static(path.join(__dirname, 'public', 'bills')));
 app.use('/members', express.static(path.join(__dirname, 'public', 'members')));
+app.use('/images', express.static(path.join(__dirname, 'public', 'images')));
 
-// 2. Connect to MongoDB Atlas with automatic fallback to local MongoDB
+// 2. Connect only to the configured real MongoDB database.
 // Why fallback exists:
 // - Atlas may be temporarily unreachable (network issues, IP not whitelisted)
 // - Allows development to continue with local MongoDB
@@ -86,58 +100,19 @@ app.use('/members', express.static(path.join(__dirname, 'public', 'members')));
 // 2. Click "Add IP Address"
 // 3. Add your current IP or use 0.0.0.0/0 for testing (not recommended for production)
 
-const ATLAS_MONGODB_URI = process.env.MONGODB_URI; // MongoDB Atlas connection string
-const LOCAL_MONGODB_URI = process.env.MONGODB_LOCAL_URI || 'mongodb://127.0.0.1:27017/nf_farming';
-const DB_PREFERENCE = (process.env.DB_PREFERENCE || 'atlas').toLowerCase();
+const MONGODB_URI = process.env.MONGODB_URI;
 
 const connectDB = async () => {
-    // Atlas-only mode: no local fallback allowed
-    if (DB_PREFERENCE === 'atlas-only') {
-        if (!ATLAS_MONGODB_URI) {
-            console.error('MONGODB_URI is not set; cannot connect to Atlas.');
-            process.exit(1);
-        }
-        try {
-            await mongoose.connect(ATLAS_MONGODB_URI);
-            console.log('MongoDB Connected to Atlas!');
-            return;
-        } catch (error) {
-            console.error(`Atlas connection failed: ${error.message}`);
-            throw error;
-        }
+    if (!MONGODB_URI) {
+        throw new Error('MONGODB_URI is not set');
     }
 
-    // Atlas-first or local-first with optional fallback
-    const order = DB_PREFERENCE === 'local'
-        ? [
-            { label: 'local MongoDB', uri: LOCAL_MONGODB_URI },
-            { label: 'MongoDB Atlas', uri: ATLAS_MONGODB_URI },
-        ]
-        : [
-            { label: 'MongoDB Atlas', uri: ATLAS_MONGODB_URI },
-            { label: 'local MongoDB', uri: LOCAL_MONGODB_URI },
-        ];
-
-    for (const target of order) {
-        if (!target.uri) continue;
-        try {
-            await mongoose.connect(target.uri);
-            console.log(`MongoDB Connected to ${target.label}!`);
-            return;
-        } catch (error) {
-            console.error(`${target.label} connection failed: ${error.message}`);
-        }
-    }
-
-    console.error('MongoDB connection failed, stopping server');
-    process.exit(1);
+    await mongoose.connect(MONGODB_URI);
+    console.log('MongoDB Connected to real database!');
 };
 
 // 3. Models are imported from separate files to avoid conflicts
 // All models defined in ./models/ directory
-
-// Import models
-const Member = require('./models/Member');
 
 // 4. Routes
 
@@ -159,14 +134,12 @@ app.use('/api/drafts', draftRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/branches', branchRoutes);
 
+// Admin Routes
+app.use('/api/admin', adminRoutes);
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.status(200).json({ ok: true, timestamp: new Date().toISOString() });
-});
-
-app.post('/api/test-echo', (req, res) => {
-    console.log('[DEBUG] Echo Request Received');
-    res.status(200).json({ success: true, received: req.body });
 });
 
 // Fallback: GET /api/members (for backward compatibility)
@@ -280,59 +253,6 @@ app.post('/api/members', async (req, res) => {
 });
 */
 
-// Debug endpoint to list all users (for testing)
-app.get('/api/users', async (req, res) => {
-    try {
-        const BranchManager = require('./models/BranchManager');
-        const FieldVisitor = require('./models/FieldVisitor');
-
-        const managers = await BranchManager.find().select('-password');
-        const fieldVisitors = await FieldVisitor.find().select('-password');
-        const members = await Member.find();
-
-        res.status(200).json({
-            success: true,
-            data: {
-                managers: managers.map(m => ({
-                    _id: m._id,
-                    name: m.fullName,
-                    email: m.email,
-                    code: m.userId,
-                    role: 'manager'
-                })),
-                fieldVisitors: fieldVisitors.map(fv => ({
-                    _id: fv._id,
-                    name: fv.name,
-                    userId: fv.userId,
-                    phone: fv.phone,
-                    role: 'field_visitor',
-                    status: fv.status
-                })),
-                members: members.map(m => ({
-                    _id: m._id,
-                    id: m.id,
-                    fullName: m.fullName,
-                    mobile: m.mobile,
-                    role: m.role,
-                    status: m.status
-                })),
-                counts: {
-                    managers: managers.length,
-                    fieldVisitors: fieldVisitors.length,
-                    members: members.length
-                }
-            }
-        });
-    } catch (error) {
-        console.error('Error fetching users:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error fetching users',
-            error: error.message
-        });
-    }
-});
-
 // Global Error Handler
 app.use(errorHandler);
 
@@ -346,7 +266,8 @@ app.get('/', (req, res) => {
     try {
         await connectDB();
     } catch (err) {
-        console.error(`DB Connection failed, continuing in MOCK MODE: ${err.message}`);
+        console.error(`DB Connection failed, stopping server: ${err.message}`);
+        process.exit(1);
     }
     const server = app.listen(PORT, '0.0.0.0', () => {
         const os = require('os');

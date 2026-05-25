@@ -44,13 +44,14 @@ const BranchManagerSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['active', 'inactive'],
+      enum: ['active', 'inactive', 'blocked'],
       default: 'active',
     },
     walletBalance: {
       type: Number,
       default: 0,
     },
+    deactivatedAt: { type: Date, default: null },
     profileImage: { type: String }, // Base64 image string
     fcmToken: { type: String, index: true },
     createdAt: {
@@ -72,5 +73,7 @@ BranchManagerSchema.pre('save', async function (next) {
 BranchManagerSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
+
+BranchManagerSchema.index({ branchId: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('BranchManager', BranchManagerSchema);

@@ -13,11 +13,14 @@ const TransactionSchema = new mongoose.Schema({
     totalAmount: { type: Number, required: true },
     date: { type: Date, default: Date.now, index: true },
     branchId: { type: String, required: true, default: 'default-branch', index: true },
+    status: { type: String, enum: ['completed', 'held', 'rejected'], default: 'completed' },
     pdfUrl: { type: String } // Path to generated PDF
 }, { timestamps: true });
 
 // Compound indexes for faster dashboard aggregations and reporting
 TransactionSchema.index({ branchId: 1, date: 1 });
+TransactionSchema.index({ branchId: 1, createdAt: -1 });
+TransactionSchema.index({ branchId: 1, type: 1, status: 1, date: -1 });
 TransactionSchema.index({ fieldVisitorId: 1, date: 1 });
 
 module.exports = mongoose.model('Transaction', TransactionSchema);

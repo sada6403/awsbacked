@@ -102,20 +102,35 @@ exports.transferCash = async (req, res) => {
 
     try {
         if (useTransactions) {
-            session = await mongoose.startSession();
-            session.startTransaction();
+            try {
+                session = await mongoose.startSession();
+                session.startTransaction();
+            } catch (sessErr) {
+                console.warn('[Wallet] Transactions requested but not supported by DB. Falling back to non-transactional.');
+                session = null;
+            }
         }
 
         const queryOptions = session ? { session } : {};
         const { fvId, amount, reference } = req.body;
         const managerId = req.user._id;
 
-        if (req.user.role !== 'manager') {
+        // More inclusive role check
+        if (req.user.role !== 'manager' && req.user.role !== 'branch_manager' && !req.user.isManager) {
             throw new Error('Only managers can transfer cash');
         }
 
+        // Validate fvId
+        if (!mongoose.Types.ObjectId.isValid(fvId)) {
+            throw new Error('Invalid Field Visitor ID');
+        }
+
         const manager = session ? await BranchManager.findById(managerId).session(session) : await BranchManager.findById(managerId);
-        if (manager.walletBalance < amount) {
+        if (!manager) {
+            throw new Error('Manager not found');
+        }
+        
+        if ((manager.walletBalance || 0) < Number(amount)) {
             throw new Error('Insufficient wallet balance');
         }
 
@@ -240,6 +255,8 @@ exports.requestCash = async (req, res) => {
         const request = new WalletRequest({
             fvId,
             managerId: fv.managerId,
+            branchId: fv.branchId,
+            branchCode: fv.branchId,
             amount: Number(amount),
             requestedDate: new Date(requestedDate),
             fvNote,
@@ -721,6 +738,8 @@ exports.transferToCompany = async (req, res) => {
             userId,
             userModel: userModelName,
             userRole: role,
+            branchId: req.user.branchId || req.user.branchCode,
+            branchCode: req.user.branchCode || req.user.branchId,
             amount: transferAmount,
             depositorName,
             depositorNic,
@@ -788,7 +807,8 @@ exports.approveCompanyTransfer = async (req, res) => {
         await user.save(queryOptions);
 
         // Update transfer status
-        transfer.status = 'accepted';
+        transfer.status = 'approved';
+        transfer.approvedAt = new Date();
         await transfer.save(queryOptions);
 
         // Record wallet transaction

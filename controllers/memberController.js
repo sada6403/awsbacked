@@ -310,8 +310,8 @@ const getMembers = async (req, res) => {
                 },
                 {
                     $addFields: {
-                        totalBuyAmount: { $ifNull: ["$totalBuyAmount", 0] },
-                        totalSellAmount: { $ifNull: ["$totalSellAmount", 0] }
+                        totalBuyAmount: { $add: [{ $ifNull: ["$totalBuyAmount", 0] }, { $ifNull: ["$totalBought", 0] }] },
+                        totalSellAmount: { $add: [{ $ifNull: ["$totalSellAmount", 0] }, { $ifNull: ["$totalSold", 0] }] }
                     }
                 }
             ]);
@@ -336,8 +336,8 @@ const getMembers = async (req, res) => {
             const mobile = m.mobile || '';
             const normalizedName = (m.name || '').trim().toLowerCase();
 
-            // Strictly use the stored memberCode. If it's missing, it's a lead and shouldn't be in this list.
-            const code = m.memberCode;
+            // Accept both memberCode (Schema) and memberId (Legacy Data)
+            const code = m.memberCode || m.memberId;
             if (isExtra && !code) {
                 // This is a safety check: leads should already be filtered out by the aggregate match
                 return;

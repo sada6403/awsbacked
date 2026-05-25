@@ -71,7 +71,7 @@ const generateMemberPDF = (member) => {
             doc.pipe(writeStream);
 
             // -- CONSTANTS --
-            const primaryColor = '#2E7D32'; // Green theme for NF
+            const primaryColor = '#0F766E';
             const black = '#000000';
             const white = '#FFFFFF';
             const grey = '#666666';
@@ -84,7 +84,7 @@ const generateMemberPDF = (member) => {
 
             // ====== PAGE 1: HEADER ======
             // Logo
-            const logoPath = path.join(__dirname, '..', 'public', 'images', 'logo.jpg');
+            const logoPath = path.join(__dirname, '..', 'public', 'images', 'nf_logo.jpg');
             if (fs.existsSync(logoPath)) {
                 doc.image(logoPath, 40, 35, { width: 55 });
             }
@@ -304,7 +304,7 @@ const generateMemberPDF = (member) => {
             doc.fontSize(8).font('Helvetica-Oblique').fillColor(grey)
                 .text('This is a computer-generated document. No signature is required for authentication.', 40, 740, { align: 'center', width: 515 });
             doc.fillColor(primaryColor).fontSize(9).font('Helvetica-Bold')
-                .text('Powered by NatureFarming', 40, 755, { align: 'center', width: 515 });
+                .text('Powered by Nature Farming', 40, 755, { align: 'center', width: 515 });
 
             doc.end();
 
