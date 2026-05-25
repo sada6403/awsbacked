@@ -9,7 +9,6 @@ const { generateMemberCode } = require('../utils/memberHelper');
 const { generateMemberPDF } = require('../utils/memberPdfGenerator');
 const { createAndSendNotification } = require('../utils/notificationHelper');
 const { emitMemberEvent } = require('../utils/socketService');
-const { uploadBase64Image } = require('../services/s3Service');
 
 // @desc    Send OTP for Member Registration
 // @route   POST /api/managers-members/send-otp
@@ -49,7 +48,6 @@ const sendRegistrationOtp = async (req, res) => {
         // In Dev mode (no creds), return OTP to frontend for easy testing
         if (!process.env.MOBITEL_USERNAME) {
             responseData.devOtp = otp;
-            console.log(`[Dev] Sending OTP ${otp} to frontend`);
         }
 
         res.status(200).json(responseData);
@@ -122,8 +120,7 @@ const verifyOtpsAndRegister = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Name, address, mobile, and NIC are required' });
         }
 
-        // Mobile OTP verification bypassed as per user request to streamline flow
-        /*
+        // Mobile OTP is always required
         if (!mobileOtp) {
             return res.status(400).json({ success: false, message: 'Mobile OTP is required' });
         }
@@ -132,14 +129,12 @@ const verifyOtpsAndRegister = async (req, res) => {
         if (email && !emailOtp) {
             return res.status(400).json({ success: false, message: 'Email OTP is required when providing an email address' });
         }
-        */
 
         // Normalize data
         if (nic) nic = nic.trim().toUpperCase();
         if (mobile) mobile = mobile.replace(/\s+/g, '');
         if (email) email = email.trim().toLowerCase();
 
-        /*
         // Verify Mobile OTP
         const mobileOtpDoc = await Otp.findOne({ identifier: mobile });
         if (!mobileOtpDoc || mobileOtpDoc.otp !== mobileOtp || mobileOtpDoc.expires < Date.now()) {
@@ -153,7 +148,6 @@ const verifyOtpsAndRegister = async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Invalid or expired email OTP' });
             }
         }
-        */
 
         // Check duplications (Mobile, Email, or NIC)
         const orConditions = [{ mobile }, { nic }];
@@ -218,9 +212,8 @@ const verifyOtpsAndRegister = async (req, res) => {
             console.error('Notification (Manager) Error:', notifErr);
         }
 
-        // EMIT REAL-TIME UPDATE (Targeted rooms)
-        emitMemberEvent('memberCreated', savedMember, `manager_${managerId}`);
-        emitMemberEvent('memberCreated', savedMember, `branch_${branchId}`);
+        // EMIT REAL-TIME UPDATE
+        emitMemberEvent('memberCreated', savedMember);
 
         res.status(201).json({ success: true, message: 'Member registered successfully', data: savedMember, pdfUrl });
 
@@ -271,20 +264,14 @@ const registerMember = async (req, res) => {
         const generatedMemberCode = await generateMemberCode(branchId, req.user.role, req.user);
         // ---------------------------------
 
-        // Upload images to S3
-        const [s3IdFront, s3IdBack] = await Promise.all([
-            uploadBase64Image(idFrontImage, 'ids'),
-            uploadBase64Image(idBackImage, 'ids')
-        ]);
-
         const newMember = new ManagersMember({
             name,
             address,
             mobile,
             email,
             nic,
-            idFrontImage: s3IdFront,
-            idBackImage: s3IdBack,
+            idFrontImage,
+            idBackImage,
             memberCode: generatedMemberCode,
             addedBy: managerId,
             branchId: req.user.branchId || 'default-branch',
@@ -319,9 +306,8 @@ const registerMember = async (req, res) => {
             console.error('Notification (Manager Legacy) Error:', notifErr);
         }
 
-        // EMIT REAL-TIME UPDATE (Targeted rooms)
-        emitMemberEvent('memberCreated', savedMember, `manager_${managerId}`);
-        emitMemberEvent('memberCreated', savedMember, `branch_${branchId}`);
+        // EMIT REAL-TIME UPDATE
+        emitMemberEvent('memberCreated', savedMember);
 
         res.status(201).json({ success: true, message: 'Member registered successfully', data: savedMember, pdfUrl });
 
@@ -345,74 +331,29 @@ const registerMember = async (req, res) => {
 const getMyMembers = async (req, res) => {
     try {
         const managerId = req.user._id;
-        const { page = 1, limit = 20, search = '' } = req.query;
-        
-        const pageNumber = Number(page);
-        const pageSize = Number(limit);
         const userOid = new mongoose.Types.ObjectId(managerId);
 
-        // Build search conditions
-        const searchReg = search ? { $regex: search, $options: 'i' } : null;
-        const mgrMatch = { addedBy: userOid };
-        const extMatch = { collectedBy: userOid };
-
-        if (searchReg) {
-            const searchOr = [
-                { name: searchReg },
-                { mobile: searchReg },
-                { memberCode: searchReg },
-                { member_code: searchReg }
-            ];
-            mgrMatch.$or = searchOr;
-            extMatch.$or = searchOr;
-        }
-
-        // Fetch counts for both (for total)
-        const [mgrCount, extCount] = await Promise.all([
-            ManagersMember.countDocuments(mgrMatch),
-            ExtraMember.countDocuments(extMatch)
-        ]);
-
-        const totalCount = mgrCount + extCount;
-
-        // For pagination of merged results:
-        // We fetch up to (page * limit) from each, merge, sort, and slice.
-        // This is okay for a few hundred/thousand members.
-        const fetchLimit = pageNumber * pageSize;
-
         const [mgrMembers, extMembers] = await Promise.all([
-            ManagersMember.find(mgrMatch)
-                .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
+            ManagersMember.find({ addedBy: userOid })
+                .select('-profileImage -signatureImage -idFrontImage -idBackImage')
                 .sort({ createdAt: -1 })
-                .limit(fetchLimit)
+                .limit(100)
                 .lean(),
-            ExtraMember.find(extMatch)
+            ExtraMember.find({ collectedBy: userOid })
                 .select('-profileImage -signatureImage -idFrontImage -idBackImage -biometricData')
                 .sort({ collectedAt: -1 })
-                .limit(fetchLimit)
+                .limit(100)
                 .lean()
         ]);
 
-        // Merge and sort manually
-        const allMembers = [...mgrMembers, ...extMembers].sort((a, b) => {
+        // Merge and sort by date with robustness
+        const members = [...mgrMembers, ...extMembers].sort((a, b) => {
             const dateA = new Date(a.createdAt || a.collectedAt || 0);
             const dateB = new Date(b.createdAt || b.collectedAt || 0);
             return dateB - dateA;
         });
 
-        // Slice for the current page
-        const startIndex = (pageNumber - 1) * pageSize;
-        const paginatedMembers = allMembers.slice(startIndex, startIndex + pageSize);
-
-        res.status(200).json({
-            success: true,
-            count: paginatedMembers.length,
-            total: totalCount,
-            page: pageNumber,
-            pages: Math.ceil(totalCount / pageSize),
-            hasMore: totalCount > pageNumber * pageSize,
-            data: paginatedMembers
-        });
+        res.status(200).json({ success: true, count: members.length, data: members });
     } catch (error) {
         console.error('[getMyMembers] Error:', error);
         res.status(500).json({
@@ -431,8 +372,6 @@ const getRecentMembers = async (req, res) => {
         const managerId = req.user._id;
         const userOid = new mongoose.Types.ObjectId(managerId);
         const limit = parseInt(req.query.limit) || 5;
-
-        console.log(`[getRecentMembers] Manager: ${managerId} | Limit: ${limit}`);
 
         const [mgrMembers, extMembers] = await Promise.all([
             ManagersMember.find({ addedBy: userOid })
@@ -473,8 +412,6 @@ const getMemberDetails = async (req, res) => {
         const managerId = req.user._id;
         const { memberId } = req.params;
         const userOid = new mongoose.Types.ObjectId(managerId);
-
-        console.log(`[getMemberDetails] Manager: ${managerId} | Member: ${memberId}`);
 
         let member = await ManagersMember.findOne({
             _id: memberId,

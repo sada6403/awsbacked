@@ -1,7 +1,6 @@
 const ExtraMember = require('../models/ExtraMember');
 const translationService = require('../services/translationService');
 const { clearDashboardCache } = require('./reportController');
-const { uploadBase64Image } = require('../services/s3Service');
 
 // @desc    Add a new extra member (lead)
 // @route   POST /api/extra-members
@@ -39,13 +38,6 @@ exports.addExtraMember = async (req, res) => {
             });
         }
 
-        // Upload all images to S3 in parallel
-        const [s3IdFront, s3IdBack, s3Profile] = await Promise.all([
-            uploadBase64Image(idFrontImage, 'ids'),
-            uploadBase64Image(idBackImage, 'ids'),
-            uploadBase64Image(profileImage, 'profile')
-        ]);
-
         const newMember = await ExtraMember.create({
             name,
             address,
@@ -53,17 +45,14 @@ exports.addExtraMember = async (req, res) => {
             email,
             nic,
             notes,
-            idFrontImage: s3IdFront,
-            idBackImage: s3IdBack,
-            profileImage: s3Profile,
+            idFrontImage,
+            idBackImage,
+            profileImage,
             branchId,
             area,
             collectedBy: fieldVisitorId,
             collectedAt: new Date()
         });
-
-        // --- Atomically Update Field Visitor Lead Count ---
-        await FieldVisitor.findByIdAndUpdate(fieldVisitorId, { $inc: { leadCount: 1 } });
 
         // Clear dashboard cache if lead addition affects any counts
         clearDashboardCache();
@@ -131,33 +120,13 @@ exports.getExtraMembers = async (req, res) => {
         const userId = req.user._id;
         const role = req.user.role;
         const branchId = req.user.branchId || 'default-branch';
-        const isManager = role && (role.toLowerCase() === 'manager' || role.toLowerCase() === 'branch manager');
-
-        const mongoose = require('mongoose');
-        const cacheService = require('../services/cacheService');
-
-        const cacheKey = `leads_${role}_${userId}_${branchId}_${req.query.fieldVisitorId || 'all'}`;
-        const cached = cacheService.get(cacheKey);
-        const forceRefresh = req.query.refresh === 'true';
-
-        if (cached && !forceRefresh) {
-            console.log(`[getExtraMembers] Serving from Cache: ${cacheKey}`);
-            return res.json(cached);
-        }
-
-        console.log(`[getExtraMembers] Query: ${JSON.stringify(req.query)} | User: ${userId} (${role}) | Branch: ${branchId}`);
 
         let query = {};
-        if (isManager) {
+        if (role === 'manager') {
             const requestedVisitorId = req.query.fieldVisitorId;
             if (requestedVisitorId) {
                 // Manager can filter by specific field visitor
-                const mongoose = require('mongoose');
-                query = { 
-                    collectedBy: mongoose.Types.ObjectId.isValid(requestedVisitorId)
-                        ? new mongoose.Types.ObjectId(requestedVisitorId)
-                        : requestedVisitorId 
-                };
+                query = { collectedBy: requestedVisitorId };
             } else {
                 // Manager sees all leads from their branch's FVs + themselves
                 const FieldVisitor = require('../models/FieldVisitor');
@@ -190,18 +159,13 @@ exports.getExtraMembers = async (req, res) => {
             member_code: `E-${m.mobile.slice(-4)}`
         }));
 
-        const responseData = {
+        res.status(200).json({
             success: true,
             count: data.length,
             data: data
-        };
-
-        console.log(`[getExtraMembers] Result Count: ${data.length} | Branch: ${branchId}`);
-        cacheService.set(cacheKey, responseData, 300);
-
-        res.status(200).json(responseData);
+        });
     } catch (error) {
-        console.error('getExtraMembers Error:', error);
+        console.error('Error getting extra members:', error);
         res.status(500).json({ success: false, message: 'Server Error', error: error.message });
     }
 };

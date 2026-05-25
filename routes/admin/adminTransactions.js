@@ -4,9 +4,19 @@ const adminOnly = require('../../middleware/adminOnlyMiddleware');
 const checkPermission = require('../../middleware/permissionMiddleware');
 const auditLog = require('../../middleware/auditLogMiddleware');
 const Branch = require('../../models/Branch');
+const Member = require('../../models/Member');
+const ExtraMember = require('../../models/ExtraMember');
+const ManagersMember = require('../../models/ManagersMember');
 const Transaction = require('../../models/Transaction');
 const { canAccessBranch } = require('../../utils/adminAccess');
 const { applyBranchFilters } = require('../../utils/adminBranchFilters');
+
+const MEMBER_MODELS = { Member, ExtraMember, ManagersMember };
+
+async function lookupMember(memberId, memberModel, select) {
+  const Model = MEMBER_MODELS[memberModel] || Member;
+  return Model.findById(memberId).select(select).lean();
+}
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -49,11 +59,6 @@ router.get('/', adminOnly, checkPermission('All Transactions', 'view'), async (r
 
     const transactions = await Transaction.find(query)
       .populate('fieldVisitorId', 'name fullName')
-      .populate({
-        path: 'memberId',
-        select: 'name mobile',
-        model: 'Member' // Explicitly set model because it could be dynamic
-      })
       .sort({ createdAt: -1 });
     const branchCodes = [...new Set(transactions.map((transaction) => transaction.branchId).filter(Boolean))];
     const branches = await Branch.find({ branchCode: { $in: branchCodes } }, 'branchCode branchName').lean();
@@ -78,17 +83,16 @@ router.get('/:id', adminOnly, checkPermission('All Transactions', 'view'), async
   try {
     const transaction = await Transaction.findById(req.params.id)
       .populate('fieldVisitorId', 'name fullName')
-      .populate({
-        path: 'memberId',
-        select: 'name mobile',
-        model: 'Member'
-      });
+      .lean();
     if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
     if (!canAccessBranch(req.adminUser, transaction.branchId)) {
       return res.status(403).json({ message: 'You cannot view this transaction' });
     }
-    const branch = await Branch.findOne({ branchCode: transaction.branchId }, 'branchCode branchName').lean();
-    res.json({ success: true, data: { ...transaction.toObject(), branchName: branch?.branchName || transaction.branchId } });
+    const [branch, member] = await Promise.all([
+      Branch.findOne({ branchCode: transaction.branchId }, 'branchCode branchName').lean(),
+      lookupMember(transaction.memberId, transaction.memberModel, 'name mobile'),
+    ]);
+    res.json({ success: true, data: { ...transaction, memberId: member, branchName: branch?.branchName || transaction.branchId } });
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message || 'Server Error' });
   }
@@ -100,14 +104,16 @@ router.get('/:id/receipt', adminOnly, checkPermission('All Transactions', 'view'
   try {
     const transaction = await Transaction.findById(req.params.id)
       .populate('fieldVisitorId', 'name fullName phone email userId')
-      .populate({ path: 'memberId', select: 'name mobile email nic memberCode address', model: 'Member' })
       .lean();
     if (!transaction) return res.status(404).send('Transaction not found');
     if (!canAccessBranch(req.adminUser, transaction.branchId)) {
       return res.status(403).send('You cannot view this transaction');
     }
-    const branch = await Branch.findOne({ branchCode: transaction.branchId }, 'branchCode branchName address phone email').lean();
-    const member = typeof transaction.memberId === 'object' ? transaction.memberId : {};
+    const [branch, memberDoc] = await Promise.all([
+      Branch.findOne({ branchCode: transaction.branchId }, 'branchCode branchName address phone email').lean(),
+      lookupMember(transaction.memberId, transaction.memberModel, 'name mobile email nic memberCode address'),
+    ]);
+    const member = memberDoc || {};
     const fieldVisitor = typeof transaction.fieldVisitorId === 'object' ? transaction.fieldVisitorId : {};
     const receiptRef = transaction.billNumber || String(transaction._id);
     const logoUrl = `${req.protocol}://${req.get('host')}/images/nf_logo.jpg`;

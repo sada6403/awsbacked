@@ -14,18 +14,12 @@ const MemberSchema = new mongoose.Schema({
     registeredAt: { type: Date, default: Date.now, index: true },
     profileImage: { type: String }, // Base64 encoded image
     memberType: { type: String, enum: ['New', 'Old'], default: 'New' },
-    status: { type: String, enum: ['active', 'blocked'], default: 'active' },
     registrationFeePaid: { type: Boolean, default: false },
     biometricData: { type: String }, // Stores biometric confirmation or skip reason
     signatureImage: { type: String }, // Base64 encoded signature image
     idFrontImage: { type: String }, // Base64 encoded ID card front
     idBackImage: { type: String }, // Base64 encoded ID card back
-    walletBalance: { type: Number, default: 0 },
-    totalBuyAmount: { type: Number, default: 0 },
-    totalSellAmount: { type: Number, default: 0 }
+    walletBalance: { type: Number, default: 0 }
 });
-
-MemberSchema.index({ branchId: 1, status: 1, registeredAt: -1 });
-MemberSchema.index({ branchId: 1, fieldVisitorId: 1 });
 
 module.exports = mongoose.model('Member', MemberSchema);

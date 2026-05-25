@@ -6,21 +6,18 @@ const generateToken = require('../utils/generateToken');
 // @route   POST /api/auth/login
 // @access  Public
 const loginUser = async (req, res, next) => {
-    console.log('\n[DEBUG] Login Attempt Started');
-    console.log('[DEBUG] Body:', JSON.stringify(req.body, null, 2));
     try {
         const { username, password, role } = req.body; // username can be email or userId
 
         if (!username || !password || !role) {
-            console.log('[DEBUG] Missing credentials');
             res.status(400);
             throw new Error('Please provide all credentials');
         }
+
         let user;
 
         if (role === 'manager') {
-
-            // 1. Find user in BranchManager collection
+            // Manager login by email or userId
             user = await BranchManager.findOne({
                 $or: [{ email: username }, { userId: username }]
             });
@@ -40,11 +37,11 @@ const loginUser = async (req, res, next) => {
                 name: user.fullName || user.name,
                 email: user.email,
                 code: user.userId || user.code,
-                role: user.role || role,
+                role: role,
                 branchId,
                 branchName: user.branchName || '', // Return branch name
                 profileImage: user.profileImage, // Return profile image
-                token: generateToken(user._id, user.role || (role === 'field' ? 'field_visitor' : 'manager'), branchId),
+                token: generateToken(user._id, role === 'field' ? 'field_visitor' : 'manager', branchId),
             };
 
             // Add phone field for all users
@@ -247,49 +244,4 @@ const updateFcmToken = async (req, res, next) => {
     }
 };
 
-// @desc    Change Password
-// @route   POST /api/auth/change-password
-// @access  Private
-const changePassword = async (req, res, next) => {
-    try {
-        const { oldPassword, newPassword } = req.body;
-        const userId = req.user._id;
-        const role = req.user.role;
-
-        if (!oldPassword || !newPassword) {
-            res.status(400);
-            throw new Error('Please provide old and new password');
-        }
-
-        let user;
-        if (role === 'manager' || role === 'branch_manager') {
-            user = await BranchManager.findById(userId);
-        } else {
-            user = await FieldVisitor.findById(userId);
-        }
-
-        if (!user) {
-            res.status(404);
-            throw new Error('User not found');
-        }
-
-        // Check if old password matches
-        if (!(await user.matchPassword(oldPassword))) {
-            res.status(401);
-            throw new Error('Incorrect old password');
-        }
-
-        // Set new password (the model pre-save hook will hash it)
-        user.password = newPassword;
-        await user.save();
-
-        res.json({
-            success: true,
-            message: 'Password changed successfully'
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-module.exports = { loginUser, registerManager, updateManager, getManagerById, updateFcmToken, changePassword };
+module.exports = { loginUser, registerManager, updateManager, getManagerById, updateFcmToken };

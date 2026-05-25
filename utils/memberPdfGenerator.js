@@ -1,7 +1,6 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 
 /**
  * Detects if a string is valid base64 image data.
@@ -31,32 +30,12 @@ function base64ToBuffer(str) {
 }
 
 /**
- * Universal helper to get a Buffer from either Base64 or a Remote URL (S3).
- */
-async function getImageBuffer(source) {
-    if (!source) return null;
-    if (source.startsWith('http')) {
-        try {
-            const response = await axios.get(source, { responseType: 'arraybuffer' });
-            return Buffer.from(response.data, 'binary');
-        } catch (e) {
-            console.error(`Remote image fetch error (${source}):`, e.message);
-            return null;
-        }
-    }
-    if (isBase64Image(source)) {
-        return base64ToBuffer(source);
-    }
-    return null;
-}
-
-/**
  * Generates a Member Registration PDF.
  * @param {Object} member - The member document from the database.
  * @returns {Promise<string>} - The relative URL path to the generated PDF.
  */
 const generateMemberPDF = (member) => {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
         try {
             const doc = new PDFDocument({ margin: 40, size: 'A4' });
             const membersDir = path.join(__dirname, '..', 'public', 'members');
@@ -71,7 +50,7 @@ const generateMemberPDF = (member) => {
             doc.pipe(writeStream);
 
             // -- CONSTANTS --
-            const primaryColor = '#0F766E';
+            const primaryColor = '#2E7D32'; // Green theme for NF
             const black = '#000000';
             const white = '#FFFFFF';
             const grey = '#666666';
@@ -84,7 +63,7 @@ const generateMemberPDF = (member) => {
 
             // ====== PAGE 1: HEADER ======
             // Logo
-            const logoPath = path.join(__dirname, '..', 'public', 'images', 'nf_logo.jpg');
+            const logoPath = path.join(__dirname, '..', 'public', 'images', 'logo.jpg');
             if (fs.existsSync(logoPath)) {
                 doc.image(logoPath, 40, 35, { width: 55 });
             }
@@ -96,9 +75,9 @@ const generateMemberPDF = (member) => {
                 .text('Phone: 024 433 5099 | Email: nfplantation.official.it@gmail.com', 105, 75);
 
             // Profile Photo (top right)
-            if (member.profileImage) {
+            if (member.profileImage && isBase64Image(member.profileImage)) {
                 try {
-                    const profileBuf = await getImageBuffer(member.profileImage);
+                    const profileBuf = base64ToBuffer(member.profileImage);
                     if (profileBuf) {
                         doc.image(profileBuf, 480, 35, { width: 70, height: 80, fit: [70, 80] });
                     }
@@ -233,9 +212,9 @@ const generateMemberPDF = (member) => {
             y += 10;
             sectionHeader('Signature');
 
-            if (member.signatureImage) {
+            if (member.signatureImage && isBase64Image(member.signatureImage)) {
                 try {
-                    const sigBuf = await getImageBuffer(member.signatureImage);
+                    const sigBuf = base64ToBuffer(member.signatureImage);
                     if (sigBuf) {
                         doc.image(sigBuf, 50, y, { width: 120, height: 50, fit: [120, 50] });
                         y += 55;
@@ -254,8 +233,8 @@ const generateMemberPDF = (member) => {
             }
 
             // ====== ID CARD IMAGES ======
-            const hasIdFront = !!member.idFrontImage;
-            const hasIdBack = !!member.idBackImage;
+            const hasIdFront = member.idFrontImage && isBase64Image(member.idFrontImage);
+            const hasIdBack = member.idBackImage && isBase64Image(member.idBackImage);
 
             if (hasIdFront || hasIdBack) {
                 // Start a new page for ID cards if not enough space
@@ -269,7 +248,7 @@ const generateMemberPDF = (member) => {
 
                 if (hasIdFront) {
                     try {
-                        const frontBuf = await getImageBuffer(member.idFrontImage);
+                        const frontBuf = base64ToBuffer(member.idFrontImage);
                         if (frontBuf) {
                             doc.fillColor(grey).fontSize(9).font('Helvetica-Bold').text('ID Card - Front:', 50, y);
                             y += 15;
@@ -287,7 +266,7 @@ const generateMemberPDF = (member) => {
                         y = 50;
                     }
                     try {
-                        const backBuf = await getImageBuffer(member.idBackImage);
+                        const backBuf = base64ToBuffer(member.idBackImage);
                         if (backBuf) {
                             doc.fillColor(grey).fontSize(9).font('Helvetica-Bold').text('ID Card - Back:', 50, y);
                             y += 15;
@@ -304,7 +283,7 @@ const generateMemberPDF = (member) => {
             doc.fontSize(8).font('Helvetica-Oblique').fillColor(grey)
                 .text('This is a computer-generated document. No signature is required for authentication.', 40, 740, { align: 'center', width: 515 });
             doc.fillColor(primaryColor).fontSize(9).font('Helvetica-Bold')
-                .text('Powered by Nature Farming', 40, 755, { align: 'center', width: 515 });
+                .text('Powered by NatureFarming', 40, 755, { align: 'center', width: 515 });
 
             doc.end();
 

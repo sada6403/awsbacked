@@ -9,8 +9,6 @@ const smsService = require('../services/smsService');
 const mongoose = require('mongoose');
 const Notification = require('../models/Notification');
 const CompanyTransfer = require('../models/CompanyTransfer');
-const { clearDashboardCache } = require('./reportController');
-const { uploadBase64Image } = require('../services/s3Service');
 
 // @desc    Get current user's wallet balance
 // @route   GET /api/wallet/balance
@@ -85,8 +83,6 @@ exports.inputCash = async (req, res) => {
             branchId: manager.branchId
         });
 
-        clearDashboardCache();
-
         res.json({ success: true, balance: manager.walletBalance, transaction: walletTx });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -102,35 +98,20 @@ exports.transferCash = async (req, res) => {
 
     try {
         if (useTransactions) {
-            try {
-                session = await mongoose.startSession();
-                session.startTransaction();
-            } catch (sessErr) {
-                console.warn('[Wallet] Transactions requested but not supported by DB. Falling back to non-transactional.');
-                session = null;
-            }
+            session = await mongoose.startSession();
+            session.startTransaction();
         }
 
         const queryOptions = session ? { session } : {};
         const { fvId, amount, reference } = req.body;
         const managerId = req.user._id;
 
-        // More inclusive role check
-        if (req.user.role !== 'manager' && req.user.role !== 'branch_manager' && !req.user.isManager) {
+        if (req.user.role !== 'manager') {
             throw new Error('Only managers can transfer cash');
         }
 
-        // Validate fvId
-        if (!mongoose.Types.ObjectId.isValid(fvId)) {
-            throw new Error('Invalid Field Visitor ID');
-        }
-
         const manager = session ? await BranchManager.findById(managerId).session(session) : await BranchManager.findById(managerId);
-        if (!manager) {
-            throw new Error('Manager not found');
-        }
-        
-        if ((manager.walletBalance || 0) < Number(amount)) {
+        if (manager.walletBalance < amount) {
             throw new Error('Insufficient wallet balance');
         }
 
@@ -196,7 +177,6 @@ exports.transferCash = async (req, res) => {
             console.error('Wallet Transfer SMS Error:', smsErr.message);
         }
 
-        clearDashboardCache();
         res.json({ success: true, managerBalance: manager.walletBalance });
     } catch (error) {
         if (useTransactions && session) {
@@ -216,23 +196,11 @@ exports.transferCash = async (req, res) => {
 exports.getWalletHistory = async (req, res) => {
     try {
         const userId = req.user._id;
-        let history = await WalletTransaction.find({ userId })
+        const history = await WalletTransaction.find({ userId })
             .select('-__v -updatedAt')
             .sort({ createdAt: -1 })
             .limit(50)
             .lean();
-
-        // Backend workaround for APK time bug (double-shifting 5.5 hours)
-        // Subtract 5 hours and 30 minutes from createdAt to counteract the Flutter app adding it again.
-        history = history.map(tx => {
-            if (tx.createdAt) {
-                const date = new Date(tx.createdAt);
-                date.setMinutes(date.getMinutes() - 330); // 5.5 hours = 330 minutes
-                return { ...tx, createdAt: date };
-            }
-            return tx;
-        });
-
         res.json({ success: true, history });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -255,8 +223,6 @@ exports.requestCash = async (req, res) => {
         const request = new WalletRequest({
             fvId,
             managerId: fv.managerId,
-            branchId: fv.branchId,
-            branchCode: fv.branchId,
             amount: Number(amount),
             requestedDate: new Date(requestedDate),
             fvNote,
@@ -448,8 +414,6 @@ exports.approveWalletRequest = async (req, res) => {
             console.error('Approval Notification Error:', notifErr.message);
         }
 
-        clearDashboardCache();
-
         res.status(200).json({
             success: true,
             message: 'Request approved and cash transferred successfully.',
@@ -525,30 +489,18 @@ exports.sendDonorOTP = async (req, res) => {
 // @route   POST /api/wallet/donor/verify-and-add
 // @access  Private (Manager only)
 exports.verifyDonorOTPAndAddCash = async (req, res) => {
-    const useTransactions = process.env.USE_TRANSACTIONS !== 'false';
-    let session = null;
-
     try {
         const { phone, otp, amount, name, idNumber, role } = req.body;
         const managerId = req.user._id;
 
-        if (useTransactions) {
-            session = await mongoose.startSession();
-            session.startTransaction();
-        }
-
-        const queryOptions = session ? { session } : {};
-
-        // OTP verification bypassed as per user request to streamline flow
-        /*
-        const otpDoc = await Otp.findOne({ identifier: phone, otp }).session(session ? session : null);
+        const otpDoc = await Otp.findOne({ identifier: phone, otp });
         if (!otpDoc || otpDoc.expires < new Date()) {
-            throw new Error('Invalid or expired OTP');
+            return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
         }
-        */
 
-        const manager = await BranchManager.findById(managerId).session(session ? session : null);
-        if (!manager) throw new Error('Manager not found');
+        // Check if this is a Field Visitor (Phone + ID/NIC match)
+        // Ensure to check within the same branch as the manager (optional but safer)
+        const manager = await BranchManager.findById(managerId);
 
         let fv = null;
         if (idNumber) {
@@ -556,140 +508,134 @@ exports.verifyDonorOTPAndAddCash = async (req, res) => {
                 phone,
                 nic: idNumber,
                 branchId: manager.branchId
-            }).session(session ? session : null);
+            });
         }
 
         if (fv) {
             // CASE 1: Field Visitor Cash Collection
+            // Check Balance
             if ((fv.walletBalance || 0) < Number(amount)) {
-                throw new Error(`Insufficient balance in Field Visitor's wallet. Available: Rs. ${fv.walletBalance}`);
+                return res.status(400).json({
+                    success: false,
+                    message: `Insufficient balance in Field Visitor's wallet. Available: Rs. ${fv.walletBalance}`
+                });
             }
 
-            // Perform Atomic Updates
-            const updatedFV = await FieldVisitor.findByIdAndUpdate(
-                fv._id,
-                { $inc: { walletBalance: -Number(amount) } },
-                { new: true, ...queryOptions }
-            );
+            // Perform Transfer logic
+            // 1. Deduct from FV
+            fv.walletBalance = (fv.walletBalance || 0) - Number(amount);
+            await fv.save();
 
-            const updatedManager = await BranchManager.findByIdAndUpdate(
-                managerId,
-                { $inc: { walletBalance: Number(amount) } },
-                { new: true, ...queryOptions }
-            );
+            // 2. Add to Manager
+            manager.walletBalance = (manager.walletBalance || 0) + Number(amount);
+            await manager.save();
 
-            // Record Transactions
+            // 3. Record Transactions
+            // TX for FV (Outgoing)
             const txFV = new WalletTransaction({
                 userId: fv._id,
                 userModel: 'FieldVisitor',
                 type: 'transfer_out',
                 amount: Number(amount),
-                balanceAfter: updatedFV.walletBalance,
+                balanceAfter: fv.walletBalance,
                 reference: `Cash Collection by Manager (${manager.fullName})`,
                 relatedUserId: managerId,
                 relatedUserModel: 'BranchManager'
             });
-            await txFV.save(queryOptions);
+            await txFV.save();
 
+            // TX for Manager (Incoming)
             const txMgr = new WalletTransaction({
                 userId: managerId,
                 userModel: 'BranchManager',
-                type: 'transfer_in',
+                type: 'transfer_in', // Or 'input' but 'transfer_in' is more accurate for internal movement
                 amount: Number(amount),
-                balanceAfter: updatedManager.walletBalance,
+                balanceAfter: manager.walletBalance,
                 reference: `Cash Collection from ${fv.name} (FV)`,
                 relatedUserId: fv._id,
                 relatedUserModel: 'FieldVisitor'
             });
-            await txMgr.save(queryOptions);
+            await txMgr.save();
 
-            // Notify Field Visitor (Fire & Forget outside transaction commit)
-            const notifyFV = async () => {
-                try {
-                    const { createAndSendNotification } = require('../utils/notificationHelper');
-                    await createAndSendNotification({
-                        title: 'Cash Deducted',
-                        body: `Manager collected Rs. ${amount} from your wallet.`,
-                        date: new Date(),
-                        userId: fv._id,
-                        userRole: 'field_visitor',
-                        fieldVisitorId: fv._id,
-                        branchId: fv.branchId
-                    });
-                    if (fv.phone) {
-                        await smsService.sendGeneralSMS(fv.phone, `Nature Farming: Manager collected Rs. ${amount} from your wallet. New Balance: Rs. ${updatedFV.walletBalance}.`);
-                    }
-                } catch (e) {
-                    console.error('FV Notification Error:', e.message);
-                }
-            };
+            // Clear OTP
+            await Otp.deleteOne({ _id: otpDoc._id });
 
-            if (useTransactions && session) await session.commitTransaction();
+            // Notify FV
+            try {
+                const msg = `Nature Farming: Manager collected Rs. ${amount} from your wallet. New Balance: Rs. ${fv.walletBalance}.`;
+                await smsService.sendGeneralSMS(fv.phone, msg);
+            } catch (e) {
+                console.error('SMS Error:', e.message);
+            }
 
-            // Send notifications after success
-            notifyFV();
+            // Notify Field Visitor
+            const { createAndSendNotification } = require('../utils/notificationHelper');
+            await createAndSendNotification({
+                title: 'Cash Deducted',
+                body: `Manager collected Rs. ${amount} from your wallet.`,
+                date: new Date(),
+                userId: fv._id,
+                userRole: 'field_visitor',
+                fieldVisitorId: fv._id,
+                branchId: fv.branchId
+            });
+
+            // Notify Manager
+            await createAndSendNotification({
+                title: 'Cash Collection',
+                body: `Collected Rs. ${amount} from ${fv.name}.`,
+                date: new Date(),
+                userId: managerId,
+                userRole: 'manager',
+                managerId: managerId,
+                branchId: manager.branchId
+            });
 
             return res.json({
                 success: true,
-                balance: updatedManager.walletBalance,
+                balance: manager.walletBalance,
                 message: `Successfully collected Rs. ${amount} from ${fv.name}`
             });
 
         } else {
-            // CASE 2: External Donor
-            let donor = await CashDonor.findOne({ phone }).session(session ? session : null);
+            // CASE 2: External Donor (Standard Flow)
+            let donor = await CashDonor.findOne({ phone });
             if (!donor) {
                 donor = new CashDonor({ name, phone, idNumber, role });
-                await donor.save(queryOptions);
+                await donor.save();
             }
 
-            const updatedManager = await BranchManager.findByIdAndUpdate(
-                managerId,
-                { $inc: { walletBalance: Number(amount) } },
-                { new: true, ...queryOptions }
-            );
+            manager.walletBalance = (manager.walletBalance || 0) + Number(amount);
+            await manager.save();
 
             const walletTx = new WalletTransaction({
                 userId: managerId,
                 userModel: 'BranchManager',
                 type: 'input',
                 amount: Number(amount),
-                balanceAfter: updatedManager.walletBalance,
-                reference: `Cash from Donor: ${donor.name} (${donor.role || 'N/A'})`
+                balanceAfter: manager.walletBalance,
+                reference: `Cash from Donor: ${donor.name} (${donor.role})`
             });
-            await walletTx.save(queryOptions);
-
-            if (useTransactions && session) await session.commitTransaction();
+            await walletTx.save();
 
             // Notify Manager
-            try {
-                const { createAndSendNotification } = require('../utils/notificationHelper');
-                await createAndSendNotification({
-                    title: 'Cash Received (Donor)',
-                    body: `Received Rs. ${amount} from ${donor.name} (${donor.role || 'Donor'}).`,
-                    date: new Date(),
-                    userId: managerId,
-                    userRole: 'manager',
-                    managerId: managerId,
-                    branchId: manager.branchId
-                });
-            } catch (notifErr) {
-                console.error('Donor Notification Error:', notifErr.message);
-            }
+            const { createAndSendNotification } = require('../utils/notificationHelper');
+            await createAndSendNotification({
+                title: 'Cash Received (Donor)',
+                body: `Received Rs. ${amount} from ${donor.name} (${donor.role}).`,
+                date: new Date(),
+                userId: managerId,
+                userRole: 'manager',
+                managerId: managerId,
+                branchId: manager.branchId
+            });
 
-            res.json({ success: true, balance: updatedManager.walletBalance, donor });
+            await Otp.deleteOne({ _id: otpDoc._id });
+
+            res.json({ success: true, balance: manager.walletBalance, donor });
         }
-
-        clearDashboardCache();
-
-        // Clean up OTP session-independently or within if possible
-        // await Otp.deleteOne({ _id: otpDoc._id });
-
     } catch (error) {
-        if (useTransactions && session) await session.abortTransaction();
-        res.status(400).json({ success: false, message: error.message });
-    } finally {
-        if (session) session.endSession();
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 
@@ -720,8 +666,7 @@ exports.transferToCompany = async (req, res) => {
         if (!depositorNic) throw new Error('Depositor NIC is required');
         if (!receiptImage) throw new Error('Receipt image (Base64) is required');
 
-        // Upload receipt to S3
-        const receiptUrl = await uploadBase64Image(receiptImage, 'receipts');
+        const receiptUrl = receiptImage; // Store base64 directly as per project pattern
 
         let userModelName;
 
@@ -738,8 +683,6 @@ exports.transferToCompany = async (req, res) => {
             userId,
             userModel: userModelName,
             userRole: role,
-            branchId: req.user.branchId || req.user.branchCode,
-            branchCode: req.user.branchCode || req.user.branchId,
             amount: transferAmount,
             depositorName,
             depositorNic,
@@ -807,8 +750,7 @@ exports.approveCompanyTransfer = async (req, res) => {
         await user.save(queryOptions);
 
         // Update transfer status
-        transfer.status = 'approved';
-        transfer.approvedAt = new Date();
+        transfer.status = 'accepted';
         await transfer.save(queryOptions);
 
         // Record wallet transaction
@@ -842,8 +784,6 @@ exports.approveCompanyTransfer = async (req, res) => {
         } catch (notificationError) {
             console.error('Notification error:', notificationError);
         }
-
-        clearDashboardCache();
 
         res.json({
             success: true,
@@ -904,7 +844,7 @@ exports.updateCompanyTransfer = async (req, res) => {
         if (depositorNic !== undefined) transfer.depositorNic = depositorNic;
         if (receiptImage !== undefined) {
             if (!receiptImage) throw new Error('Receipt image cannot be empty');
-            transfer.receiptUrl = await uploadBase64Image(receiptImage, 'receipts');
+            transfer.receiptUrl = receiptImage; // Store base64 directly
         }
 
         await transfer.save();

@@ -9,7 +9,6 @@
         "seed": "node seed.js"
     },
     "dependencies": {
-        "@aws-sdk/client-s3": "^3.1001.0",
         "@google/generative-ai": "^0.24.1",
         "axios": "^1.13.5",
         "bcryptjs": "^2.4.3",
@@ -25,8 +24,7 @@
         "node-cache": "^5.1.2",
         "nodemailer": "^7.0.12",
         "pdfkit": "^0.14.0",
-        "socket.io": "^4.8.3",
-        "uuid": "^13.0.0"
+        "socket.io": "^4.8.3"
     },
     "devDependencies": {
         "nodemon": "^3.0.2"

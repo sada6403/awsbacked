@@ -4,7 +4,7 @@ const BranchManager = require('../models/BranchManager');
 
 /**
  * Generates a custom member code based on the branch name.
- * Format: FA[BranchCode][Sequence] (e.g., FAKM001)
+ * Format: FA[BranchCode][Sequence] (e.g., FAKA001)
  */
 async function generateMemberCode(branchId, userRole, userData) {
     if (userRole === 'manager') {
@@ -52,8 +52,7 @@ async function generateMemberCode(branchId, userRole, userData) {
 
     if (branchNameStr) {
         const nameUpper = branchNameStr.toUpperCase();
-        if (nameUpper.includes('KALMUNAI')) branchCode = 'KM';
-        else if (nameUpper.includes('KANDAWALAI')) branchCode = 'KA';
+        if (nameUpper.includes('KALMUNAI')) branchCode = 'KA';
         else if (nameUpper.includes('TRINCO')) branchCode = 'TR';
         else if (nameUpper.includes('KONDAVIL')) branchCode = 'JK';
         else if (nameUpper.includes('SAVAGACHERI') || nameUpper.includes('CHAVAKACHCHERI')) branchCode = 'JS';
@@ -61,17 +60,43 @@ async function generateMemberCode(branchId, userRole, userData) {
     }
 
     const prefix = `FA${branchCode}`;
-    
-    // Generate timestamp-based unique ID: YYYYMMDDHHMMSS
-    const now = new Date();
-    const timestamp = now.getFullYear().toString() +
-        (now.getMonth() + 1).toString().padStart(2, '0') +
-        now.getDate().toString().padStart(2, '0') +
-        now.getHours().toString().padStart(2, '0') +
-        now.getMinutes().toString().padStart(2, '0') +
-        now.getSeconds().toString().padStart(2, '0');
+    const [lastExtra, lastCentral, lastManager] = await Promise.all([
+        ExtraMember.findOne({
+            memberCode: { $regex: `^${prefix}\\d+$` }
+        })
+            .sort({ memberCode: -1 })
+            .collation({ locale: "en", numericOrdering: true }),
+        Member.findOne({
+            memberCode: { $regex: `^${prefix}\\d+$` }
+        })
+            .sort({ memberCode: -1 })
+            .collation({ locale: "en", numericOrdering: true }),
+        require('../models/ManagersMember').findOne({
+            memberCode: { $regex: `^${prefix}\\d+$` }
+        })
+            .sort({ memberCode: -1 })
+            .collation({ locale: "en", numericOrdering: true })
+    ]);
 
-    return `${prefix}${timestamp}`;
+    let maxSeq = 0;
+
+    if (lastExtra && lastExtra.memberCode) {
+        const seq = parseInt(lastExtra.memberCode.replace(prefix, ''), 10);
+        if (!isNaN(seq)) maxSeq = Math.max(maxSeq, seq);
+    }
+
+    if (lastCentral && lastCentral.memberCode) {
+        const seq = parseInt(lastCentral.memberCode.replace(prefix, ''), 10);
+        if (!isNaN(seq)) maxSeq = Math.max(maxSeq, seq);
+    }
+
+    if (lastManager && lastManager.memberCode) {
+        const seq = parseInt(lastManager.memberCode.replace(prefix, ''), 10);
+        if (!isNaN(seq)) maxSeq = Math.max(maxSeq, seq);
+    }
+
+    const sequence = maxSeq + 1;
+    return `${prefix}${sequence.toString().padStart(3, '0')}`;
 }
 
 /**

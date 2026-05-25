@@ -36,15 +36,10 @@ const getIO = () => {
     return io;
 };
 
-const emitMemberEvent = (event, data, room = null) => {
+const emitMemberEvent = (event, data) => {
     if (io) {
-        if (room) {
-            console.log(`Emitting event: ${event} to room: ${room}`);
-            io.to(room).emit(event, data);
-        } else {
-            console.log(`Emitting event: ${event} (Global)`);
-            io.emit(event, data);
-        }
+        console.log(`Emitting event: ${event}`);
+        io.emit(event, data);
     }
 };
 

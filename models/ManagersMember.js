@@ -18,8 +18,6 @@ const ManagersMemberSchema = new mongoose.Schema({
     registrationFeePaid: { type: Boolean, default: false },
     pdfUrl: { type: String },
     isFirstTransactionDone: { type: Boolean, default: false },
-    totalBuyAmount: { type: Number, default: 0 },
-    totalSellAmount: { type: Number, default: 0 },
     createdAt: { type: Date, default: Date.now, index: true }
 });
 

@@ -18,7 +18,7 @@ const generateBillPDF = (transaction, member, officer) => {
             doc.pipe(writeStream);
 
             // -- CONSTANTS --
-            const primaryColor = '#0F766E';
+            const primaryColor = '#4682B4'; // Steel Blue / Cornflower Blue style
             const black = '#000000';
             const white = '#FFFFFF';
             const grey = '#555555';
@@ -29,7 +29,7 @@ const generateBillPDF = (transaction, member, officer) => {
 
             // 1. Header Section
             // Logo
-            const logoPath = path.join(__dirname, '..', 'public', 'images', 'nf_logo.jpg');
+            const logoPath = path.join(__dirname, '..', 'public', 'images', 'logo.jpg');
             if (fs.existsSync(logoPath)) {
                 doc.image(logoPath, 40, 40, { width: 60 });
             }
@@ -183,7 +183,7 @@ const generateBillPDF = (transaction, member, officer) => {
 
             // Branding Footer
             doc.fillColor('red').fontSize(10).font('Helvetica-Bold')
-                .text('Powered by Nature Farming', 420, 770, { align: 'right', width: 130 });
+                .text('Powered by NatureFarming', 450, 770, { align: 'right' });
 
 
             doc.end();

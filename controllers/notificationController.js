@@ -30,14 +30,14 @@ const getMyNotifications = async (req, res) => {
 // @route   POST /api/notifications
 // @access  Private
 const createNotification = async (req, res) => {
-    console.log('[createNotification] Request received:', req.body);
+
     try {
         const { title, body, date, sendToAll, recipientId } = req.body;
         const userId = req.user?._id;
         const userRole = req.user?.role;
         const branchId = req.user?.branchId; // Get branchId from logged in manager
 
-        console.log('[createNotification] User:', userId, 'Role:', userRole);
+
 
         if (!userId) {
             return res.status(401).json({ success: false, message: 'Not authorized' });
@@ -50,7 +50,6 @@ const createNotification = async (req, res) => {
             if (sendToAll) {
                 // Find all field visitors in this branch
                 const visitors = await FieldVisitor.find({ branchId }).select('_id');
-                console.log(`[createNotification] Sending to all ${visitors.length} visitors in branch ${branchId}`);
 
                 for (const visitor of visitors) {
                     notificationsToCreate.push({
@@ -66,8 +65,6 @@ const createNotification = async (req, res) => {
                     });
                 }
             } else if (recipientId) {
-                // Send to specific field visitor
-                console.log(`[createNotification] Sending to specific visitor ${recipientId}`);
                 notificationsToCreate.push({
                     title,
                     body,
@@ -108,7 +105,6 @@ const createNotification = async (req, res) => {
             // Automatically notify the Branch Manager(s)
             try {
                 const managers = await BranchManager.find({ branchId });
-                console.log(`[createNotification] Found ${managers.length} managers for branch ${branchId}`);
 
                 for (const manager of managers) {
                     notificationsToCreate.push({
@@ -129,7 +125,7 @@ const createNotification = async (req, res) => {
 
         if (notificationsToCreate.length > 0) {
             const savedNotifications = await sendManyAndPush(notificationsToCreate);
-            console.log('[createNotification] Created and triggered:', savedNotifications.length, 'notifications');
+
             res.status(201).json({ success: true, count: savedNotifications.length, data: savedNotifications });
         } else {
             res.status(200).json({ success: true, message: 'No recipients found', data: [] });

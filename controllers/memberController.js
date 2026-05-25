@@ -49,24 +49,17 @@ const registerMember = async (req, res, next) => {
             generatedMemberCode = await generateMemberCode(branchId, req.user.role, req.user);
         }
 
-        // 1. UPLOAD IMAGES IN PARALLEL (Once only)
-        const [uploadedProfile, uploadedSignature, uploadedFront, uploadedBack] = await Promise.all([
-            uploadBase64Image(profileImage, 'profile'),
-            uploadBase64Image(signatureImage, 'signatures'),
-            uploadBase64Image(idFrontImage, 'ids'),
-            uploadBase64Image(idBackImage, 'ids')
-        ]);
-
         let newMember;
         if (leadId) {
             newMember = await ExtraMember.findById(leadId);
         }
 
         if (newMember) {
-            newMember.profileImage = uploadedProfile;
-            newMember.signatureImage = uploadedSignature;
-            newMember.idFrontImage = uploadedFront;
-            newMember.idBackImage = uploadedBack;
+            // Upload images to S3 if they are base64
+            if (profileImage) newMember.profileImage = await uploadBase64Image(profileImage, 'profile');
+            if (signatureImage) newMember.signatureImage = await uploadBase64Image(signatureImage, 'signatures');
+            if (idFrontImage) newMember.idFrontImage = await uploadBase64Image(idFrontImage, 'ids');
+            if (idBackImage) newMember.idBackImage = await uploadBase64Image(idBackImage, 'ids');
 
             newMember.name = name;
             newMember.address = address;
@@ -79,7 +72,7 @@ const registerMember = async (req, res, next) => {
             newMember.registrationFeePaid = registrationFeePaid;
             newMember.biometricData = biometricData;
             newMember.collectedAt = new Date();
-            await newMember.save();
+            await newMember.save(); // Only save to ExtraMember if it was already a lead
         }
 
         // Sync to central Member collection - skip for managers
@@ -98,13 +91,13 @@ const registerMember = async (req, res, next) => {
                     area: req.user?.area || 'default-area',
                     registrationData,
                     registeredAt: new Date(),
-                    profileImage: uploadedProfile,
+                    profileImage: await uploadBase64Image(profileImage, 'profile'),
                     memberType,
                     registrationFeePaid,
                     biometricData,
-                    signatureImage: uploadedSignature,
-                    idFrontImage: uploadedFront,
-                    idBackImage: uploadedBack,
+                    signatureImage: await uploadBase64Image(signatureImage, 'signatures'),
+                    idFrontImage: await uploadBase64Image(idFrontImage, 'ids'),
+                    idBackImage: await uploadBase64Image(idBackImage, 'ids'),
                     walletBalance: 0
                 };
                 savedMember = await Member.findOneAndUpdate(
@@ -112,19 +105,11 @@ const registerMember = async (req, res, next) => {
                     memberData,
                     { upsert: true, new: true }
                 );
-
-                // --- Atomically Update Field Visitor Member/Lead Counts ---
-                if (req.user && (req.user.role === 'field_visitor' || req.user.role === 'field')) {
-                    const fvUpdate = { $inc: { memberCount: 1 } };
-                    if (leadId) fvUpdate.$inc.leadCount = -1;
-                    await FieldVisitor.findByIdAndUpdate(req.user._id, fvUpdate);
-                }
             } catch (syncError) {
                 console.error('[Sync] Error:', syncError);
-                throw syncError;
+                throw syncError; // Fail if central sync fails
             }
-        }
- else {
+        } else {
             // For managers, if not already handled as lead, we might need a dummy savedMember object or handle response
             // But based on current logic, if a manager calls this (unauthorized), we don't save to Member.
             // If it was a lead (ExtraMember), it's already updated above.
@@ -164,10 +149,8 @@ const registerMember = async (req, res, next) => {
             console.error('Notification Creation Error:', notifErr);
         }
 
-        // EMIT REAL-TIME UPDATE (Targeted rooms to prevent cross-branch leakage)
-        const fieldVisitorId = req.user._id;
-        emitMemberEvent('memberCreated', savedMember, `visitor_${fieldVisitorId}`);
-        emitMemberEvent('memberCreated', savedMember, `branch_${branchId}`);
+        // EMIT REAL-TIME UPDATE
+        emitMemberEvent('memberCreated', savedMember);
 
         // CREDIT WALLET FOR FIELD VISITOR (Only for New Members)
         if (req.user && (req.user.role === 'field_visitor' || req.user.role === 'field') && memberType === 'New') {
@@ -187,8 +170,6 @@ const registerMember = async (req, res, next) => {
                         reference: `Registration Fee: ${savedMember.name} (${savedMember.memberCode})`
                     });
                     await walletTx.save();
-
-                    console.log(`[Wallet] Credited 1000 to FV ${fv.name} for member ${savedMember.name}`);
                 }
             } catch (walletErr) {
                 console.error('[Wallet] Bonus Credit Error:', walletErr);
@@ -219,42 +200,24 @@ const registerMember = async (req, res, next) => {
 const getMembers = async (req, res) => {
     try {
         const { search, fieldVisitorId: queryFvId } = req.query;
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 20;
-        const skip = (page - 1) * limit;
-
         const branchId = req.user?.branchId || 'default-branch';
         const userId = req.user?._id;
         const role = req.user?.role;
-        const isManager = role && (role.toLowerCase() === 'manager' || role.toLowerCase() === 'branch manager');
 
-        const cacheKey = `members_${role}_${userId}_${branchId}_${queryFvId || 'all'}_${search || 'none'}_p${page}_l${limit}`;
+        const cacheKey = `members_${role}_${userId}_${branchId}_${queryFvId || 'all'}_${search || 'none'}`;
         const cached = cacheService.get(cacheKey);
-        
-        // Force refresh from DB if requested or troubleshooting
-        const forceRefresh = req.query.refresh === 'true';
-
-        if (cached && !forceRefresh) {
-            console.log(`[getMembers] Serving from Cache: ${cacheKey}`);
+        if (cached) {
             return res.json(cached);
         }
-
-        const INSTANCE_ID = '[SVR-v2-SYNC]'; // Unique trace for this version
-        console.log(`${INSTANCE_ID} [getMembers] Query: ${JSON.stringify(req.query)} | User: ${userId} (${role}) | Branch: ${branchId}`);
 
         let extraMatch = {};
         let memberMatch = {};
 
-        if (isManager) {
-            // Guard: only filter by FV if queryFvId is a valid non-empty ObjectId
-            if (queryFvId && mongoose.Types.ObjectId.isValid(queryFvId)) {
+        if (role === 'manager') {
+            if (queryFvId) {
                 const fvOid = new mongoose.Types.ObjectId(queryFvId);
-                // RELAXED: Prioritize the connection to the Field Visitor.
-                // If Jhon is visible to the manager, all his members should be too.
-                memberMatch = { fieldVisitorId: fvOid };
-                extraMatch = { collectedBy: fvOid };
-
-                console.log(`${INSTANCE_ID} [getMembers] Relaxed Branch filter for Jhon/FvId: ${queryFvId}`);
+                extraMatch.collectedBy = fvOid;
+                memberMatch.fieldVisitorId = fvOid;
             } else {
                 const visitors = await FieldVisitor.find({ branchId }).select('_id');
                 const visitorIds = visitors.map(v => v._id);
@@ -297,8 +260,7 @@ const getMembers = async (req, res) => {
             return Model.aggregate([
                 { $match: match },
                 { $sort: { [Model.modelName === 'Member' ? 'registeredAt' : 'collectedAt']: -1 } },
-                { $skip: skip },
-                { $limit: limit },
+                { $limit: 100 },
                 {
                     $project: {
                         profileImage: 0,
@@ -309,35 +271,52 @@ const getMembers = async (req, res) => {
                     }
                 },
                 {
-                    $addFields: {
-                        totalBuyAmount: { $add: [{ $ifNull: ["$totalBuyAmount", 0] }, { $ifNull: ["$totalBought", 0] }] },
-                        totalSellAmount: { $add: [{ $ifNull: ["$totalSellAmount", 0] }, { $ifNull: ["$totalSold", 0] }] }
+                    $lookup: {
+                        from: 'transactions',
+                        localField: '_id',
+                        foreignField: 'memberId',
+                        pipeline: [
+                            {
+                                $group: {
+                                    _id: '$type',
+                                    totalAmount: { $sum: '$totalAmount' },
+                                    totalQuantity: { $sum: '$quantity' }
+                                }
+                            }
+                        ],
+                        as: 'txStats'
                     }
                 }
             ]);
         };
 
-        const [extraResults, memberResults, totalMembers, totalExtra] = await Promise.all([
+        const [extraResults, memberResults] = await Promise.all([
             // Include Leads (ExtraMember) for both Managers and Field Visitors to ensure full visibility
             fetchWithTxs(ExtraMember, extraMatch),
-            fetchWithTxs(Member, memberMatch),
-            Member.countDocuments(memberMatch),
-            ExtraMember.countDocuments(extraMatch)
+            fetchWithTxs(Member, memberMatch)
         ]);
-
-        const totalMatching = totalMembers + totalExtra;
 
         const mergedMap = new Map();
 
         const processResult = (m, isExtra) => {
-            const totalBuyAmount = m.totalBuyAmount || 0;
-            const totalSellAmount = m.totalSellAmount || 0;
+            let totalBuyAmount = 0;
+            let totalSellAmount = 0;
+
+            if (m.txStats && Array.isArray(m.txStats)) {
+                m.txStats.forEach(stat => {
+                    if (stat._id === 'buy') {
+                        totalBuyAmount = stat.totalAmount || 0;
+                    } else if (stat._id === 'sell') {
+                        totalSellAmount = stat.totalAmount || 0;
+                    }
+                });
+            }
 
             const mobile = m.mobile || '';
             const normalizedName = (m.name || '').trim().toLowerCase();
 
-            // Accept both memberCode (Schema) and memberId (Legacy Data)
-            const code = m.memberCode || m.memberId;
+            // Strictly use the stored memberCode. If it's missing, it's a lead and shouldn't be in this list.
+            const code = m.memberCode;
             if (isExtra && !code) {
                 // This is a safety check: leads should already be filtered out by the aggregate match
                 return;
@@ -387,26 +366,21 @@ const getMembers = async (req, res) => {
         extraResults.forEach(m => processResult(m, true));
         memberResults.forEach(m => processResult(m, false));
 
-        const serverData = Array.from(mergedMap.values()).sort((a, b) =>
+        const data = Array.from(mergedMap.values()).sort((a, b) =>
             new Date(b.registeredAt || 0) - new Date(a.registeredAt || 0)
         );
 
-        console.log(`[getMembers] Result Count: ${serverData.length} | Merged Results: ${serverData.length} | Branch: ${branchId}`);
+        // DEBUG LOGGING
+        const fs = require('fs');
+        const debugOutput = data.map(m => `Name: ${m.name}, Sig: ${m.signatureImage ? m.signatureImage.length : 'NULL'}, RegData: ${m.registrationData ? Object.keys(m.registrationData) : 'NULL'}`).join('\n');
+        fs.appendFileSync('debug_members.txt', `[${new Date().toISOString()}]\n${debugOutput}\n\n`);
 
-        const responseData = { 
-            success: true, 
-            count: serverData.length,
-            total: totalMatching,
-            data: serverData,
-            page,
-            hasMore: serverData.length >= limit // Heuristic: if we reached the limit, there might be more
-        };
-
-        res.json(responseData);
-        cacheService.set(cacheKey, responseData, 300);
+        res.json({ success: true, count: data.length, data });
+        // Cache for 5 minutes
+        cacheService.set(cacheKey, { success: true, count: data.length, data }, 300);
     } catch (error) {
         console.error('[getMembers] Error:', error);
-        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message, stack: error.stack });
     }
 };
 
@@ -445,14 +419,8 @@ const updateMember = async (req, res) => {
 
         const updatedMember = await member.save();
 
-        // EMIT REAL-TIME UPDATE (Targeted rooms)
-        const branchId = updatedMember.branchId || 'default-branch';
-        const fieldVisitorId = isExtra ? updatedMember.collectedBy : updatedMember.fieldVisitorId;
-        
-        if (fieldVisitorId) {
-            emitMemberEvent('memberUpdated', updatedMember, `visitor_${fieldVisitorId}`);
-        }
-        emitMemberEvent('memberUpdated', updatedMember, `branch_${branchId}`);
+        // EMIT REAL-TIME UPDATE
+        emitMemberEvent('memberUpdated', updatedMember);
 
         // Clear dashboard and member caches
         clearDashboardCache();

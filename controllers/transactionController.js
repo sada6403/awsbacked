@@ -15,15 +15,26 @@ const Otp = require('../models/Otp');
 
 // Generate Bill Number
 const generateBillNumber = async (type) => {
-    const now = new Date();
-    const timestamp = now.getFullYear().toString() +
-        (now.getMonth() + 1).toString().padStart(2, '0') +
-        now.getDate().toString().padStart(2, '0') +
-        now.getHours().toString().padStart(2, '0') +
-        now.getMinutes().toString().padStart(2, '0') +
-        now.getSeconds().toString().padStart(2, '0');
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
+    const prefix = `NF-${type[0]}-${dateStr}`;
 
-    return `NF-${type[0]}-${timestamp}`;
+    // Find the latest transaction with this prefix to get the highest sequence
+    const lastTransaction = await Transaction.findOne({
+        billNumber: new RegExp(`^${prefix}-\\d+$`)
+    }).sort({ billNumber: -1 }).lean();
+
+    let nextSequence = 1;
+    if (lastTransaction && lastTransaction.billNumber) {
+        const parts = lastTransaction.billNumber.split('-');
+        const lastSeq = parseInt(parts[parts.length - 1]);
+        if (!isNaN(lastSeq)) {
+            nextSequence = lastSeq + 1;
+        }
+    }
+
+    const sequenceStr = nextSequence.toString().padStart(5, '0');
+    return `${prefix}-${sequenceStr}`;
 };
 
 // @desc    Create new transaction
@@ -71,21 +82,9 @@ const createTransaction = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Member not found in any collection' });
         }
 
-        // Branch check - case-insensitive normalization to prevent "trinco" vs "TRINCO" mismatches
-        const normalizedMemberBranch = (member.branchId || '').toString().toLowerCase();
-        const normalizedRequestBranch = branchId.toLowerCase();
-
-        if (member.branchId && normalizedMemberBranch !== normalizedRequestBranch) {
-            // Fallback: If the member was added by this manager (ManagersMember or ExtraMember), allow it
-            const addedBy = member.addedBy || member.collectedBy;
-            const isOwner = addedBy && addedBy.toString() === req.user._id.toString();
-
-            if (isOwner) {
-                console.log(`[createTransaction] Branch mismatch ignored as a fallback (IsOwner: true). Member branch: ${member.branchId}, Req branch: ${branchId}`);
-            } else {
-                console.error('[createTransaction] Branch mismatch. Member branch:', member.branchId, 'Request branch:', branchId);
-                return res.status(403).json({ success: false, message: 'Member not in your branch' });
-            }
+        // Branch check - assuming ExtraMember has branchId (I added it to models/ExtraMember.js earlier)
+        if (member.branchId && member.branchId !== branchId) {
+            return res.status(403).json({ success: false, message: 'Member not in your branch' });
         }
 
         let fv = null;
@@ -98,16 +97,14 @@ const createTransaction = async (req, res) => {
                 console.error('[createTransaction] Field visitor not found:', fieldVisitorId);
                 return res.status(404).json({ success: false, message: 'Field visitor not found' });
             }
-
-            const normalizedFvBranch = (fv.branchId || '').toString().toLowerCase();
-            if (normalizedFvBranch !== normalizedRequestBranch) {
+            if (fv.branchId !== branchId) {
                 console.error('[createTransaction] FV branch mismatch. Req branch:', branchId, 'FV branch:', fv.branchId);
                 return res.status(403).json({ success: false, message: 'Field visitor not in your branch' });
             }
         } else {
             // Check if user is a Manager (or allow if logic dictates)
             // For now, we allow it, assuming the frontend only sends empty FV ID for allowed roles.
-            console.log('[createTransaction] No Field Visitor ID provided. Proceeding as direct transaction.');
+
         }
 
         const product = await Product.findOne({ productId });
@@ -246,28 +243,6 @@ const createTransaction = async (req, res) => {
 
                 saved = await transaction.save();
 
-                // --- Atomically Update Member Totals ---
-                const amountToIncr = Number(totalAmount);
-                const updateQuery = {};
-                if (normalizedType === 'buy') {
-                    updateQuery.totalBuyAmount = amountToIncr;
-                } else {
-                    updateQuery.totalSellAmount = amountToIncr;
-                }
-
-                if (memberModel === 'Member') {
-                    await Member.findByIdAndUpdate(member._id, { $inc: updateQuery });
-                } else if (memberModel === 'ExtraMember') {
-                    await ExtraMember.findByIdAndUpdate(member._id, { $inc: updateQuery });
-                } else if (memberModel === 'ManagersMember') {
-                    await ManagersMember.findByIdAndUpdate(member._id, { $inc: updateQuery });
-                }
-
-                // --- Atomically Update Field Visitor Totals ---
-                if (fv) {
-                    await FieldVisitor.findByIdAndUpdate(fv._id, { $inc: updateQuery });
-                }
-
                 // Determine if this is a first transaction for a lead or manager-member
                 const isFirstTransactionLead = (memberModel === 'ManagersMember' && !member.isFirstTransactionDone);
 
@@ -320,7 +295,7 @@ const createTransaction = async (req, res) => {
                     date: new Date(),
                     attachment: saved.pdfUrl // Use saved.pdfUrl
                 }).catch(e => console.error('[createTransaction] ASYNC_MGR_NOTIF_ERROR:', e.message));
-                console.log('[createTransaction] Triggered manager notification (async).');
+
             } catch (notifErr) {
                 console.error('[createTransaction] CRITICAL_BYPASS: Failed to setup manager notification:', notifErr.message);
             }
@@ -328,7 +303,7 @@ const createTransaction = async (req, res) => {
 
         // 1. Send SMS Bill (Normal SMS)
         if (member.mobile) {
-            console.log('[createTransaction] Triggering SMS (async)...');
+
             smsService.sendBillSMS(member.mobile, {
                 name: member.full_name || member.name,
                 type: normalizedType.toUpperCase(),
@@ -344,7 +319,7 @@ const createTransaction = async (req, res) => {
 
         // 2. Send Email Bill (PDF)
         if (member.email && member.email.trim().length > 0) {
-            console.log(`[createTransaction] Triggering Email (async) for ${member.email}`);
+
             emailService.sendBillEmail(member.email, {
                 name: member.full_name || member.name,
                 type: normalizedType.toUpperCase(),
@@ -371,7 +346,7 @@ const createTransaction = async (req, res) => {
 
         // Notify field visitor + branch manager
         try {
-            console.log('[createTransaction] Preparing Notifications...');
+
             let managerNum = null;
             if (fv && fv.managerId) {
                 // We await this as it's a DB query, but we could optimize if needed.
@@ -416,20 +391,14 @@ const createTransaction = async (req, res) => {
             }
 
             const { sendManyAndPush } = require('../utils/notificationHelper');
-            console.log(`[createTransaction] Triggering ${notifications.length} notifications (async)...`);
+
             // Fire and forget pushes
             sendManyAndPush(notifications).catch(e => console.error('[createTransaction] ASYNC_NOTIF_ERROR:', e.message));
         } catch (notifyErr) {
             console.error('[createTransaction] Notification Preparation failed:', notifyErr.message);
         }
 
-        // Clear dashboard caches to ensure updated stats
-        const cacheService = require('../services/cacheService');
-        cacheService.delStartWith('manager_dash_');
-        cacheService.delStartWith('stats_');
-        if (fv) cacheService.delStartWith('fv_dash_');
 
-        console.log('[createTransaction] Success! Returning response for bill:', saved.billNumber);
         res.status(201).json({
             success: true,
             data: populated
@@ -492,21 +461,12 @@ const getTransactions = async (req, res) => {
             query.branchId = branchId;
         }
 
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 20;
-        const skip = (page - 1) * limit;
 
-        console.log('[getTransactions] Query:', JSON.stringify(query));
-        
-        const [transactions, totalCount] = await Promise.all([
-            Transaction.find(query)
-                .sort({ date: -1 })
-                .skip(skip)
-                .limit(limit)
-                .populate('fieldVisitorId', 'name userId branchId')
-                .lean(),
-            Transaction.countDocuments(query)
-        ]);
+        const transactions = await Transaction.find(query)
+            .sort({ date: -1 })
+            .limit(100)
+            .populate('fieldVisitorId', 'name userId branchId')
+            .lean();
 
         // Manual Polymorphic Population for memberId
         const memberIdsByModel = {
@@ -533,23 +493,11 @@ const getTransactions = async (req, res) => {
         extras.forEach(m => memberMap.set(m._id.toString(), m));
         managerMembers.forEach(m => memberMap.set(m._id.toString(), { ...m, name: m.name || m.fullName }));
 
-         transactions.forEach(tx => {
-            const txMemberId = tx.memberId?.toString();
-            if (txMemberId && memberMap.has(txMemberId)) {
-                tx.memberId = memberMap.get(txMemberId);
-            } else {
-                tx.memberId = { _id: tx.memberId, name: 'Unknown' };
-            }
+        transactions.forEach(tx => {
+            tx.memberId = memberMap.get(tx.memberId.toString()) || { _id: tx.memberId, name: 'Unknown' };
         });
 
-        res.json({ 
-            success: true, 
-            count: transactions.length, 
-            total: totalCount,
-            page,
-            hasMore: totalCount > (skip + transactions.length),
-            data: transactions 
-        });
+        res.json({ success: true, count: transactions.length, data: transactions });
     } catch (error) {
         console.error('[getTransactions] Error:', error.message);
         res.status(500).json({ success: false, message: 'Failed to fetch transactions', error: error.message });
@@ -663,7 +611,7 @@ const downloadBill = async (req, res) => {
         }
 
         // Log the download action
-        console.log(`[downloadBill] Bill ${transaction.billNumber} downloaded by ${req.user.name} (${userRole})`);
+
 
         // Return transaction with PDF URL
         res.json({
