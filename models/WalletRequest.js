@@ -13,7 +13,13 @@ const WalletRequestSchema = new mongoose.Schema({
     memberId: { type: mongoose.Schema.Types.ObjectId, ref: 'Member' }, // Optional: If request is specifically for a member
     fvNote: { type: String },
     managerNote: { type: String },
-    isProcessed: { type: Boolean, default: false }
+    isProcessed: { type: Boolean, default: false },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser' },
+    rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser' },
+    processedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser' },
+    processedAt: { type: Date },
+    adminRemarks: { type: String },
+    rejectionReason: { type: String },
 }, { timestamps: true });
 WalletRequestSchema.index({ managerId: 1, createdAt: -1 });
 WalletRequestSchema.index({ fvId: 1, createdAt: -1 });

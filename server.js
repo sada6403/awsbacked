@@ -26,6 +26,7 @@ const walletRoutes = require('./routes/walletRoutes');
 const managersMemberRoutes = require('./routes/managersMemberRoutes');
 const draftRoutes = require('./routes/draftRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const adminRoutes = require('./routes/admin');
 
 // Import error middleware
 const errorHandler = require('./middleware/errorMiddleware');
@@ -48,6 +49,7 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 const path = require('path');
 app.use('/bills', express.static(path.join(__dirname, 'public', 'bills')));
 app.use('/members', express.static(path.join(__dirname, 'public', 'members')));
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -141,6 +143,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/managers-members', managersMemberRoutes);
 app.use('/api/drafts', draftRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

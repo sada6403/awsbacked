@@ -394,6 +394,7 @@ router.get('/stock', adminOnly, checkPermission('Reports', 'view'), async (req, 
 
     const branchMap = new Map();
     branchProducts.forEach((item) => {
+      if (!item.branchCode) return;
       const product = productMap.get(item.productId);
       const productName = product?.name || item.productId;
       const txKey = `${item.branchCode}::${productName.toLowerCase()}`;

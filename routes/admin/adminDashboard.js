@@ -17,6 +17,7 @@ const { applyBranchScope, getAccessibleBranchIds } = require('../../utils/adminA
 const { applyBranchFilters } = require('../../utils/adminBranchFilters');
 const { OFFICIAL_BRANCH_CODES } = require('../../utils/branchMaster');
 const { syncBranchesFromManagers } = require('../../utils/branchSync');
+const { loadBranchDirectory } = require('../../utils/walletAdminHelpers');
 
 // @route   GET /api/admin/dashboard
 // @desc    Get top-level dashboard statistics
@@ -149,11 +150,13 @@ router.get('/', adminOnly, async (req, res) => {
     const recentTransactionBranchMap = new Map(recentTransactionBranches.map((branch) => [branch.branchCode, branch.branchName]));
 
     // Wallet balance totals across all managers and field visitors
-    const [managerWalletAgg, fvWalletAgg] = await Promise.all([
+    const [managerWalletAgg, fvWalletAgg, approvedTransferAgg] = await Promise.all([
       BranchManager.aggregate([{ $group: { _id: null, total: { $sum: '$walletBalance' } } }]),
       FieldVisitor.aggregate([{ $group: { _id: null, total: { $sum: '$walletBalance' } } }]),
+      CompanyTransfer.aggregate([{ $match: { status: 'approved' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
     ]);
     const totalWalletAmount = (managerWalletAgg[0]?.total || 0) + (fvWalletAgg[0]?.total || 0);
+    const totalApprovedTransferAmount = approvedTransferAgg[0]?.total || 0;
 
     // Get recent wallet requests
     const recentWalletRequests = await WalletRequest.find()
@@ -187,6 +190,8 @@ router.get('/', adminOnly, async (req, res) => {
         totalSellAmount: transactionStats?.totalSellAmount || 0,
         totalWalletAmount,
         totalReleaseAmount: (transactionStats?.totalBuyAmount || 0) + totalWalletAmount,
+        totalApprovedTransferAmount,
+        totalIncome: (transactionStats?.totalSellAmount || 0) + totalApprovedTransferAmount,
         pendingWalletRequests,
         pendingCompanyTransfers,
         pendingApprovals,
@@ -206,6 +211,67 @@ router.get('/', adminOnly, async (req, res) => {
       message: error.message,
       stack: error.stack
     });
+    res.status(500).json({ message: 'Server Error', details: error.message });
+  }
+});
+
+// @route   GET /api/admin/dashboard/total-income
+// @desc    Total income breakdown: sell + approved company transfers, with full history
+router.get('/total-income', adminOnly, async (req, res) => {
+  try {
+    const transactionQuery = await applyBranchFilters(req.adminUser, req.query, {}, 'branchId');
+
+    const [sellAgg, approvedTransfers] = await Promise.all([
+      Transaction.aggregate([
+        { $match: transactionQuery },
+        { $addFields: { normalizedType: { $toLower: '$type' } } },
+        { $match: { normalizedType: 'sell' } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+      ]),
+      CompanyTransfer.find({ status: 'approved' }).sort({ approvedAt: -1, createdAt: -1 }).lean(),
+    ]);
+
+    const managerIds = approvedTransfers.filter((t) => t.userModel === 'BranchManager').map((t) => t.userId);
+    const fvIds = approvedTransfers.filter((t) => t.userModel === 'FieldVisitor').map((t) => t.userId);
+
+    const [managers, fieldVisitors, branchDirectory] = await Promise.all([
+      managerIds.length ? BranchManager.find({ _id: { $in: managerIds } }, 'fullName name branchId').lean() : Promise.resolve([]),
+      fvIds.length ? FieldVisitor.find({ _id: { $in: fvIds } }, 'fullName name branchId').lean() : Promise.resolve([]),
+      loadBranchDirectory(),
+    ]);
+
+    const managerMap = new Map(managers.map((m) => [String(m._id), m]));
+    const fvMap = new Map(fieldVisitors.map((fv) => [String(fv._id), fv]));
+
+    const totalSellAmount = sellAgg[0]?.total || 0;
+    const totalApprovedTransferAmount = approvedTransfers.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+    const history = approvedTransfers.map((transfer) => {
+      const user = transfer.userModel === 'BranchManager'
+        ? managerMap.get(String(transfer.userId))
+        : fvMap.get(String(transfer.userId));
+      const branchCode = transfer.branchCode || user?.branchId || null;
+      const branch = branchCode ? branchDirectory.get(branchCode) : null;
+      return {
+        _id: transfer._id,
+        depositId: transfer.depositId || `TRF-${String(transfer._id).slice(-6).toUpperCase()}`,
+        amount: transfer.amount,
+        userName: user?.fullName || user?.name || 'Unknown User',
+        userRole: transfer.userRole,
+        branchName: branch?.branchName || branchCode || '-',
+        branchCode: branch?.branchCode || branchCode || '-',
+        depositorName: transfer.depositorName,
+        approvedAt: transfer.approvedAt || transfer.updatedAt,
+        createdAt: transfer.createdAt,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: { totalSellAmount, totalApprovedTransferAmount, totalIncome: totalSellAmount + totalApprovedTransferAmount, history },
+    });
+  } catch (error) {
+    console.error('Total Income Error:', error);
     res.status(500).json({ message: 'Server Error', details: error.message });
   }
 });
