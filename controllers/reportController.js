@@ -12,8 +12,8 @@ const BranchManager = require('../models/BranchManager');
 let dashboardCache;
 try {
     const NodeCache = require('node-cache');
-    // Cache dashboard stats for 10 minutes (600 seconds) to prevent heavy DB aggregations
-    dashboardCache = new NodeCache({ stdTTL: 600, checkperiod: 620 });
+    // Cache dashboard stats for 60 seconds so stats refresh after transactions
+    dashboardCache = new NodeCache({ stdTTL: 60, checkperiod: 70 });
 } catch (e) {
     console.warn('[reportController] node-cache not found. Dashboard caching is disabled. Use "npm install" to enable.');
     // Mock cache object to prevent crashes

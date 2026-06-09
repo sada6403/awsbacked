@@ -12,6 +12,7 @@ const { generateBillPDF } = require('../utils/pdfGenerator');
 const smsService = require('../services/smsService');
 const emailService = require('../services/emailService');
 const Otp = require('../models/Otp');
+const { clearDashboardCache } = require('./reportController');
 
 // Generate Bill Number
 const generateBillNumber = async (type) => {
@@ -403,6 +404,9 @@ const createTransaction = async (req, res) => {
             console.error('[createTransaction] Notification Preparation failed:', notifyErr.message);
         }
 
+
+        // Clear dashboard cache so stats refresh immediately after transaction
+        try { clearDashboardCache(); } catch (_) {}
 
         res.status(201).json({
             success: true,
