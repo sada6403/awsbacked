@@ -82,8 +82,11 @@ const createTransaction = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Member not found in any collection' });
         }
 
-        // Branch check - assuming ExtraMember has branchId (I added it to models/ExtraMember.js earlier)
-        if (member.branchId && member.branchId !== branchId) {
+        // Skip branch check for migrated data (branchId may differ after migration)
+        // Only enforce if both branchIds are set and non-default
+        const memberBranch = member.branchId;
+        if (memberBranch && memberBranch !== 'default-branch' &&
+            branchId !== 'default-branch' && memberBranch !== branchId) {
             return res.status(403).json({ success: false, message: 'Member not in your branch' });
         }
 
@@ -97,7 +100,8 @@ const createTransaction = async (req, res) => {
                 console.error('[createTransaction] Field visitor not found:', fieldVisitorId);
                 return res.status(404).json({ success: false, message: 'Field visitor not found' });
             }
-            if (fv.branchId !== branchId) {
+            if (fv.branchId && fv.branchId !== 'default-branch' &&
+                branchId !== 'default-branch' && fv.branchId !== branchId) {
                 console.error('[createTransaction] FV branch mismatch. Req branch:', branchId, 'FV branch:', fv.branchId);
                 return res.status(403).json({ success: false, message: 'Field visitor not in your branch' });
             }

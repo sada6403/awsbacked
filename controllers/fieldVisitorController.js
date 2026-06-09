@@ -247,9 +247,16 @@ const getFieldVisitors = async (req, res) => {
     const pageNumber = req.query.pageNumber;
     const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null;
 
-    const count = await FieldVisitor.countDocuments({ branchId });
+    // Try branch-specific first; if empty fall back to all field visitors
+    let filter = { branchId };
+    const branchCount = await FieldVisitor.countDocuments(filter);
+    if (branchCount === 0) {
+        filter = {}; // Return all if branch has no field visitors (e.g. migrated data)
+    }
 
-    let query = FieldVisitor.find({ branchId })
+    const count = await FieldVisitor.countDocuments(filter);
+
+    let query = FieldVisitor.find(filter)
         .select('name userId phone branchId area status createdAt')
         .limit(50);
 
@@ -270,7 +277,8 @@ const getFieldVisitors = async (req, res) => {
         return res.json({ fieldVisitors, page, pages: Math.ceil(count / pageSize), total: count });
     }
 
-    // Otherwise, return all field visitors (no limit)
+    // Otherwise, return all field visitors (no pagination limit)
+    query = FieldVisitor.find(filter).select('name userId phone branchId area status createdAt');
     let fieldVisitors = await query.lean();
     fieldVisitors = await attachCounts(fieldVisitors);
     res.json({ fieldVisitors, total: count });
