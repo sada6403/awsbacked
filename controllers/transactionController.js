@@ -82,10 +82,11 @@ const createTransaction = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Member not found in any collection' });
         }
 
-        // Skip branch check for migrated data (branchId may differ after migration)
-        // Only enforce if both branchIds are set and non-default
+        // Skip branch check for ManagersMember — manager always owns their own members
+        // For regular members, only enforce if both branchIds are set and non-default
         const memberBranch = member.branchId;
-        if (memberBranch && memberBranch !== 'default-branch' &&
+        if (!isManagerMember &&
+            memberBranch && memberBranch !== 'default-branch' &&
             branchId !== 'default-branch' && memberBranch !== branchId) {
             return res.status(403).json({ success: false, message: 'Member not in your branch' });
         }
