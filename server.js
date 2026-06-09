@@ -39,7 +39,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
     origin: '*', // Allow all origins (adjust in production)
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'x-request-id'],
     credentials: true
 }));
 app.use(express.json({ limit: '10mb' })); // Increased limit for signature images
