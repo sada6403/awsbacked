@@ -50,6 +50,8 @@ const path = require('path');
 app.use('/bills', express.static(path.join(__dirname, 'public', 'bills')));
 app.use('/members', express.static(path.join(__dirname, 'public', 'members')));
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+// Serve admin desktop update files (electron-updater)
+app.use('/admin-updates', express.static(path.join(__dirname, 'public', 'admin-updates')));
 
 // Request logging middleware
 app.use((req, res, next) => {
